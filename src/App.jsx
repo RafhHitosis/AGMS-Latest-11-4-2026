@@ -3,6 +3,7 @@ import SectionSelection from "./components/SectionSelection";
 import AttendancePage from "./pages/AttendancePage";
 import GradingPage from "./pages/GradingPage";
 import { ThemeProvider } from "./context/ThemeContext";
+import AuthGate from "./components/AuthGate";
 
 function MainContent() {
   const [activeSection, setActiveSection] = useState(null);
@@ -50,7 +51,9 @@ function MainContent() {
 function App() {
   return (
     <ThemeProvider>
-      <MainContent />
+      <AuthGate>
+        <MainContent />
+      </AuthGate>
     </ThemeProvider>
   );
 }

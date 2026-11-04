@@ -8,6 +8,10 @@ import { requestLogger } from "./middleware/requestLogger.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { initializeDatabase } from "./db/initDb.js";
 import { pool } from "./config/db.js";
+import { isValidPasswordHash } from "./auth/password.js";
+import authRoutes from "./routes/authRoutes.js";
+import { requireAuth } from "./middleware/requireAuth.js";
+import { isAllowedOrigin } from "./middleware/allowedOrigin.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,35 +21,38 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const clientOrigins = process.env.CLIENT_URL
-  ?.split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const trustedProxyHops = Number(process.env.TRUST_PROXY_HOPS || "0");
+
+if (!Number.isInteger(trustedProxyHops) || trustedProxyHops < 0) {
+  throw new Error("TRUST_PROXY_HOPS must be a non-negative integer.");
+}
+if (trustedProxyHops > 0) {
+  app.set("trust proxy", trustedProxyHops);
+}
 
 // Middleware
-if (clientOrigins?.length) {
-  app.use(
-    cors({
-      origin: (origin, callback) => {
-        const isLocalOrigin =
-          origin && /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin);
-
-        if (!origin || clientOrigins.includes(origin) || isLocalOrigin) {
-          callback(null, true);
-          return;
-        }
-
-        callback(new Error("Not allowed by CORS"));
-      },
-    }),
-  );
-} else {
-  app.use(cors());
-}
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(requestLogger);
 
-// API Routes
+if (!isValidPasswordHash(process.env.AUTH_PASSWORD_HASH)) {
+  throw new Error("Set AUTH_PASSWORD_HASH to a valid scrypt hash before starting the server.");
+}
+
+// Authentication is the only public API; all other endpoints require a valid session.
+app.use("/api/auth", authRoutes);
+app.use("/api", requireAuth);
 app.use("/api", apiRoutes);
 
 // Root fallback route

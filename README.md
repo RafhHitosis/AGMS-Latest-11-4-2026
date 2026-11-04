@@ -106,3 +106,46 @@ server/
 | **`npm run build`** | Builds the optimized production bundle |
 | **`npm run db:init`** | Initializes database tables |
 | **`npm run db:reset`** | **Completely resets** the database, dropping all tables and recreating clean defaults |
+| **`npm run auth:hash`** | Creates a salted scrypt hash for the app access password (input is hidden) |
+
+## 🔐 App Access Password
+
+The app requires one shared password before loading its data. The Express API also enforces authentication on every `/api` route, so hiding or changing a frontend URL cannot bypass the gate. Sessions use random, server-side tracked tokens in HttpOnly cookies, expire after 12 hours, and failed login attempts are rate-limited per client IP.
+
+### Local setup
+
+1. Generate a password hash with `npm run auth:hash` and enter the chosen password twice when prompted. Use a long, unique password; hashing does not make a weak password stronger.
+2. Put the printed hash in the root `.env` as `AUTH_PASSWORD_HASH=<hash>`. Do not put the plaintext password in `.env`, source code, or a committed file.
+3. Keep `VITE_API_URL` empty for local development so the frontend uses Vite's `/api` proxy. The server creates the authentication tables on startup through `server/db/schema.sql`.
+
+### Hosted setup
+
+Before deploying the frontend/backend code, set these backend environment variables in the hosting provider:
+
+- `AUTH_PASSWORD_HASH`: a scrypt hash generated with `npm run auth:hash` (the hash from local `.env` can also be reused).
+- `CLIENT_URL`: the exact hosted frontend origin, for example `https://pagms.netlify.app` (no path required).
+- `NODE_ENV=production`: enables Secure, cross-site cookies for the separately hosted frontend and API.
+- `TRUST_PROXY_HOPS=1`: configure this only when the API is behind one trusted reverse proxy, such as Render.
+- Keep `VITE_API_URL` configured in the frontend build to the API's HTTPS origin.
+
+The backend runs `CREATE TABLE IF NOT EXISTS` for the same authentication schema at startup. If applying database changes manually first, execute:
+
+```sql
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    token_hash CHAR(64) PRIMARY KEY,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth_sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS auth_login_attempts (
+    ip_hash CHAR(64) PRIMARY KEY,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    window_started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    locked_until TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_auth_login_attempts_window_started_at
+    ON auth_login_attempts (window_started_at);
+```
+
+Never deploy with the short password shared during setup; it is not strong enough for a public app. Choose a long, unique random password before exposing the app.

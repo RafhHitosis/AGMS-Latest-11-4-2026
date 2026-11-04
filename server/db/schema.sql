@@ -5,6 +5,25 @@
 -- Enable pgcrypto / uuid-ossp for UUID generation if needed
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- Password-authenticated browser sessions and login throttling
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    token_hash CHAR(64) PRIMARY KEY,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth_sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS auth_login_attempts (
+    ip_hash CHAR(64) PRIMARY KEY,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    window_started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    locked_until TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_login_attempts_window_started_at
+    ON auth_login_attempts (window_started_at);
+
 -- 1. App Configuration Table (Single-row configuration)
 CREATE TABLE IF NOT EXISTS app_config (
     id INT PRIMARY KEY DEFAULT 1,

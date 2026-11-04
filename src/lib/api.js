@@ -10,6 +10,7 @@ async function request(endpoint, options = {}) {
       ...options.headers,
     },
     ...options,
+    credentials: "include",
   };
 
   const response = await fetch(url, config);
@@ -33,6 +34,18 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
+  // --- Authentication ---
+  getSession: () => request("/auth/session"),
+  login: (password) =>
+    request("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+  logout: () =>
+    request("/auth/logout", {
+      method: "POST",
+    }),
+
   // --- Config ---
   getConfig: () => request("/config"),
   updateAppTitle: (title) =>
