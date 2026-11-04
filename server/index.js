@@ -41,6 +41,7 @@ app.use(
       callback(null, false);
     },
     credentials: true,
+    exposedHeaders: ["Retry-After"],
   }),
 );
 app.use(express.json());

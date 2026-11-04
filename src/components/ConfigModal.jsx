@@ -26,6 +26,7 @@ import {
 import clsx from "clsx";
 import ConfirmModal from "./ConfirmModal";
 import { useTheme } from "../context/ThemeContext";
+import { useToast } from "../context/ToastContext";
 
 const DAY_SHORT_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -34,6 +35,7 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
   const [deletedSections, setDeletedSections] = useState([]);
   const [activeTab, setActiveTab] = useState("sections"); // "sections" is default active tab
   const { theme, isDark, setTheme } = useTheme();
+  const toast = useToast();
   const [selectedTheme, setSelectedTheme] = useState(theme);
 
   const [deleteModal, setDeleteModal] = useState({
@@ -123,7 +125,7 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
 
     // Check size limit: warn if > 2MB
     if (file.size > 2 * 1024 * 1024) {
-      alert("Please choose an image under 2MB for optimal performance.");
+      toast.warn("This image is larger than 2 MB. Choose a smaller image so the app stays quick and responsive.");
     }
 
     const reader = new FileReader();
@@ -157,7 +159,7 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
   const executeRenameYear = (oldName, newName) => {
     if (oldName === newName) return;
     if (localConfig.sections[newName]) {
-      alert("Year name already exists!");
+      toast.warn("That year level already exists. Choose a different name to keep your sections organized.");
       return;
     }
 

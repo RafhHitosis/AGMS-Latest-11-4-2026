@@ -3,6 +3,7 @@ import SectionSelection from "./components/SectionSelection";
 import AttendancePage from "./pages/AttendancePage";
 import GradingPage from "./pages/GradingPage";
 import { ThemeProvider } from "./context/ThemeContext";
+import ToastProvider from "./context/ToastProvider";
 import AuthGate from "./components/AuthGate";
 
 function MainContent({ activeSection, activeTool, onSelectTool, onBack, onSignOut }) {
@@ -60,17 +61,19 @@ function App() {
 
   return (
     <ThemeProvider>
-      <AuthGate>
-        {({ requestSignOut }) => (
-          <MainContent
-            activeSection={activeSection}
-            activeTool={activeTool}
-            onSelectTool={handleSelectTool}
-            onBack={handleBack}
-            onSignOut={requestSignOut}
-          />
-        )}
-      </AuthGate>
+      <ToastProvider>
+        <AuthGate>
+          {({ requestSignOut }) => (
+            <MainContent
+              activeSection={activeSection}
+              activeTool={activeTool}
+              onSelectTool={handleSelectTool}
+              onBack={handleBack}
+              onSignOut={requestSignOut}
+            />
+          )}
+        </AuthGate>
+      </ToastProvider>
     </ThemeProvider>
   );
 }

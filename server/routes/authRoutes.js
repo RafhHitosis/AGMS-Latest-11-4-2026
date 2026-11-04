@@ -50,7 +50,7 @@ async function checkLoginRateLimit(ipHash) {
          WHEN auth_login_attempts.attempts + 1 > ${MAX_LOGIN_ATTEMPTS} THEN NOW() + INTERVAL '${LOGIN_WINDOW_MINUTES} minutes'
          ELSE NULL
        END
-     RETURNING attempts, locked_until > NOW() AS locked`,
+     RETURNING attempts, locked_until, locked_until > NOW() AS locked`,
     [ipHash],
   );
 
@@ -68,20 +68,30 @@ router.get("/session", async (req, res, next) => {
 router.post("/login", requireAllowedOrigin, async (req, res, next) => {
   try {
     const { password } = req.body || {};
-    if (typeof password !== "string" || password.length === 0 || password.length > 256) {
+    if (
+      typeof password !== "string" ||
+      password.length === 0 ||
+      password.length > 256
+    ) {
       res.status(400).json({ error: "Enter a valid password." });
       return;
     }
 
     const attempt = await checkLoginRateLimit(getRateLimitKey(req));
     if (attempt.locked) {
-      res.set("Retry-After", String(LOGIN_WINDOW_MINUTES * 60));
-      res.status(429).json({ error: "Too many attempts. Try again in 15 minutes." });
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((new Date(attempt.locked_until).getTime() - Date.now()) / 1000),
+      );
+      res.set("Retry-After", String(retryAfterSeconds));
+      res
+        .status(429)
+        .json({ error: "Too many attempts. Try again in 15 minutes." });
       return;
     }
 
     if (!(await verifyPassword(password, process.env.AUTH_PASSWORD_HASH))) {
-      res.status(401).json({ error: "Incorrect password." });
+      res.status(401).json({ error: "Incorrect Access key." });
       return;
     }
 
@@ -91,7 +101,9 @@ router.post("/login", requireAllowedOrigin, async (req, res, next) => {
       "INSERT INTO auth_sessions (token_hash, expires_at) VALUES ($1, $2)",
       [hashSessionToken(token), expiresAt],
     );
-    await pool.query("DELETE FROM auth_login_attempts WHERE ip_hash = $1", [getRateLimitKey(req)]);
+    await pool.query("DELETE FROM auth_login_attempts WHERE ip_hash = $1", [
+      getRateLimitKey(req),
+    ]);
     await pool.query("DELETE FROM auth_sessions WHERE expires_at <= NOW()");
 
     res.cookie(SESSION_COOKIE, token, {
@@ -108,7 +120,9 @@ router.post("/logout", requireAllowedOrigin, async (req, res, next) => {
   try {
     const token = getSessionToken(req);
     if (token) {
-      await pool.query("DELETE FROM auth_sessions WHERE token_hash = $1", [hashSessionToken(token)]);
+      await pool.query("DELETE FROM auth_sessions WHERE token_hash = $1", [
+        hashSessionToken(token),
+      ]);
     }
     res.clearCookie(SESSION_COOKIE, cookieBaseOptions());
     res.json({ authenticated: false });

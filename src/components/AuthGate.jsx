@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   BookOpenCheck,
   ClipboardCheck,
+  Clock,
   Eye,
   EyeOff,
   LoaderCircle,
@@ -9,17 +10,45 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api } from "../lib/api";
+import { useToast } from "../context/ToastContext";
 import ConfirmModal from "./ConfirmModal";
+import ThemeToggle from "./ThemeToggle";
 import bgPattern from "../assets/bg.png";
 
 export default function AuthGate({ children }) {
+  const toast = useToast();
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [lockoutUntil, setLockoutUntil] = useState(null);
+  const [lockoutDurationSeconds, setLockoutDurationSeconds] = useState(0);
+  const [lockoutRemainingMs, setLockoutRemainingMs] = useState(0);
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
+
+  useEffect(() => {
+    if (!lockoutUntil) return undefined;
+
+    const updateRemaining = () => {
+      const remainingMs = Math.max(0, lockoutUntil - Date.now());
+      setLockoutRemainingMs(remainingMs);
+      if (remainingMs === 0) {
+        setLockoutUntil(null);
+        setLockoutDurationSeconds(0);
+      }
+    };
+
+    updateRemaining();
+    const timer = window.setInterval(updateRemaining, 250);
+    return () => window.clearInterval(timer);
+  }, [lockoutUntil]);
+
+  const lockoutRemainingSeconds = Math.ceil(lockoutRemainingMs / 1000);
+  const isLockedOut = lockoutRemainingMs > 0;
+  const formatCountdown = (seconds) =>
+    `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
   const checkSession = useCallback(async () => {
     setChecking(true);
@@ -28,7 +57,9 @@ export default function AuthGate({ children }) {
       const session = await api.getSession();
       setAuthenticated(session.authenticated);
     } catch {
-      setError("Unable to connect to the server. Check your connection and try again.");
+      setError(
+        "Unable to connect to the server. Check your connection and try again.",
+      );
     } finally {
       setChecking(false);
     }
@@ -40,14 +71,44 @@ export default function AuthGate({ children }) {
 
   const handleLogin = async (event) => {
     event.preventDefault();
+    if (isLockedOut) {
+      toast.warn(
+        `Too many sign-in attempts have been made. For your security, please wait ${formatCountdown(lockoutRemainingSeconds)} before trying again.`,
+        { toastId: "auth-cooldown", title: "Security Cooldown" },
+      );
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       await api.login(password);
       setPassword("");
+      setLockoutUntil(null);
+      setLockoutRemainingMs(0);
+      toast.dismiss();
       setAuthenticated(true);
     } catch (loginError) {
-      setError(loginError.message || "Sign-in failed. Please try again.");
+      if (loginError.status === 401) {
+        toast.warn(
+          "The access key you entered doesn't match. Check the key and try again.",
+          { toastId: "auth-invalid-key", title: "Invalid Access Key" },
+        );
+      } else if (loginError.status === 429 && loginError.retryAfter) {
+        const durationSeconds = Math.ceil(loginError.retryAfter);
+        const until = Date.now() + durationSeconds * 1000;
+        setLockoutDurationSeconds(durationSeconds);
+        setLockoutRemainingMs(durationSeconds * 1000);
+        setLockoutUntil(until);
+        toast.warn(
+          `The maximum number of sign-in attempts has been reached. For your security, please wait ${Math.ceil(durationSeconds / 60)} minutes before trying again.`,
+          { toastId: "auth-lockout", title: "Security Cooldown" },
+        );
+      } else {
+        toast.error(
+          "We couldn't complete sign-in because the server couldn't be reached. Check your connection and try again in a moment.",
+          { toastId: "auth-error", title: "Connection Error" },
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -61,7 +122,10 @@ export default function AuthGate({ children }) {
       setAuthenticated(false);
       setConfirmingSignOut(false);
     } catch (logoutError) {
-      setError(logoutError.message || "Unable to sign out. Please try again.");
+      toast.error(
+        "We couldn't complete sign-out right now. Check your connection and try again.",
+        { toastId: "auth-logout-error", title: "Sign Out Failed" },
+      );
     } finally {
       setBusy(false);
     }
@@ -74,7 +138,10 @@ export default function AuthGate({ children }) {
 
   if (checking) {
     return (
-      <main className="flex min-h-screen items-center justify-center text-primary" aria-label="Checking access">
+      <main
+        className="flex min-h-screen items-center justify-center text-primary"
+        aria-label="Checking access"
+      >
         <LoaderCircle className="h-8 w-8 animate-spin" />
       </main>
     );
@@ -86,8 +153,12 @@ export default function AuthGate({ children }) {
         <div
           aria-hidden="true"
           className="pointer-events-none absolute bottom-0 left-0 right-0 h-[300px] bg-bottom bg-repeat-x opacity-40 dark:opacity-20 md:h-[400px]"
-          style={{ backgroundImage: `url(${bgPattern})`, backgroundSize: "auto 100%" }}
+          style={{
+            backgroundImage: `url(${bgPattern})`,
+            backgroundSize: "auto 100%",
+          }}
         />
+        <ThemeToggle className="fixed right-4 top-4 z-30 h-10 w-10 justify-center border border-outline-variant/60 bg-surface/90 shadow-elevation-1 backdrop-blur-sm sm:right-6 sm:top-6" />
         <section className="relative grid w-full max-w-3xl overflow-hidden rounded-2xl border border-outline-variant/60 bg-surface shadow-elevation-2 md:grid-cols-2">
           <div className="flex flex-col justify-center bg-surface-container-low px-7 py-8 sm:px-9 sm:py-10">
             <div className="mb-8 flex items-center gap-3">
@@ -98,15 +169,22 @@ export default function AuthGate({ children }) {
                 <h1 className="text-base font-bold tracking-tight text-on-surface">
                   Attendance &amp; Grading
                 </h1>
-                <p className="mt-0.5 text-xs text-on-surface-variant">Class management</p>
+                <p className="mt-0.5 text-xs text-on-surface-variant">
+                  Class management
+                </p>
               </div>
             </div>
 
             <div className="space-y-6">
               <div className="flex gap-3">
-                <ClipboardCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                <ClipboardCheck
+                  className="mt-0.5 h-5 w-5 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
                 <div>
-                  <h2 className="text-sm font-semibold text-on-surface">Attendance</h2>
+                  <h2 className="text-sm font-semibold text-on-surface">
+                    Attendance
+                  </h2>
                   <p className="mt-1 text-sm leading-5 text-on-surface-variant">
                     Mark daily attendance, manage holidays, and export records.
                   </p>
@@ -114,35 +192,46 @@ export default function AuthGate({ children }) {
               </div>
               <div className="h-px bg-outline-variant/60" />
               <div className="flex gap-3">
-                <BookOpenCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                <BookOpenCheck
+                  className="mt-0.5 h-5 w-5 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
                 <div>
-                  <h2 className="text-sm font-semibold text-on-surface">Grading</h2>
+                  <h2 className="text-sm font-semibold text-on-surface">
+                    Grading
+                  </h2>
                   <p className="mt-1 text-sm leading-5 text-on-surface-variant">
-                    Enter assessment scores, calculate term grades, and review results.
+                    Enter assessment scores, calculate term grades, and review
+                    results.
                   </p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col justify-center border-t border-outline-variant/60 bg-surface px-7 py-8 sm:px-9 sm:py-10 md:border-l md:border-t-0">
+          <div className="flex flex-col justify-center border-t border-outline-variant/60 bg-surface px-7 pt-8 pb-4 sm:px-9 sm:pt-10 sm:pb-6 md:border-l md:border-t-0">
             <div className="mb-7">
-              <h2 className="text-xl font-bold tracking-tight text-on-surface">Enter access key</h2>
+              <h2 className="text-xl font-bold tracking-tight text-on-surface">
+                Enter access key
+              </h2>
               <p className="mt-1.5 text-sm text-on-surface-variant">
                 Use the shared access key to continue.
               </p>
             </div>
 
             <form className="space-y-5" onSubmit={handleLogin}>
-              <label className="block text-sm font-medium text-on-surface" htmlFor="access-password">
+              <label
+                className="block text-sm font-medium text-on-surface"
+                htmlFor="access-password"
+              >
                 Access key
                 <span className="relative mt-2 block">
                   <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-on-surface-variant" />
                   <input
                     autoComplete="current-password"
                     autoFocus
-                    className="w-full rounded-lg border border-outline-variant bg-surface py-3 pl-11 pr-12 text-sm text-on-surface outline-none transition placeholder:text-on-surface-variant focus:border-primary focus:ring-2 focus:ring-primary/15"
-                    disabled={busy}
+                    className="w-full rounded-lg border border-outline-variant bg-surface py-3 pl-11 pr-12 text-sm text-on-surface outline-none transition placeholder:text-on-surface-variant focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:bg-slate-800"
+                    disabled={busy || isLockedOut}
                     id="access-password"
                     onChange={(event) => setPassword(event.target.value)}
                     required
@@ -150,35 +239,74 @@ export default function AuthGate({ children }) {
                     value={password}
                   />
                   <button
-                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
                     className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-on-surface-variant transition hover:text-on-surface"
                     onClick={() => setShowPassword((visible) => !visible)}
                     tabIndex={-1}
                     type="button"
                   >
-                    {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+                    {showPassword ? (
+                      <EyeOff className="h-[18px] w-[18px]" />
+                    ) : (
+                      <Eye className="h-[18px] w-[18px]" />
+                    )}
                   </button>
                 </span>
               </label>
 
+              {/* Inline Cooldown Indicator when Locked Out */}
+              {isLockedOut && (
+                <div className="flex items-center gap-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-xs text-amber-800 dark:text-amber-300 animate-in fade-in">
+                  <Clock className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <div>
+                    <span className="font-bold">Cooldown Active:</span> Maximum
+                    attempts reached. Please wait{" "}
+                    <span className="tabular-nums font-extrabold text-amber-700 dark:text-amber-200">
+                      {formatCountdown(lockoutRemainingSeconds)}
+                    </span>{" "}
+                    before attempting to sign in.
+                  </div>
+                </div>
+              )}
+
               {error && (
-                <p className="rounded-lg border border-error/20 bg-error-container px-4 py-3 text-sm leading-5 text-on-error-container" role="alert">
+                <p
+                  className="rounded-lg border border-error/20 bg-error-container px-4 py-3 text-sm leading-5 text-on-error-container"
+                  role="alert"
+                >
                   {error}
                 </p>
               )}
 
-              <button
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-on-primary transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={busy || !password}
-                type="submit"
-              >
-                {busy && <LoaderCircle className="h-[18px] w-[18px] animate-spin" />}
-                {busy ? "Verifying..." : "Continue"}
-              </button>
+              <div>
+                <button
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-on-primary transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={busy || isLockedOut || !password}
+                  type="submit"
+                >
+                  {busy && (
+                    <LoaderCircle className="h-[18px] w-[18px] animate-spin" />
+                  )}
+                  {busy
+                    ? "Verifying..."
+                    : isLockedOut
+                      ? `Try again in ${formatCountdown(lockoutRemainingSeconds)}`
+                      : "Continue"}
+                </button>
+                <p className="mt-6 text-center text-xs tracking-wide text-on-surface-variant">
+                  htss <span aria-hidden="true">·</span> 2026
+                </p>
+              </div>
             </form>
 
             {error.startsWith("Unable to connect") && (
-              <button className="mt-4 w-full rounded-lg border border-outline-variant px-4 py-2.5 text-sm font-medium text-on-surface-variant transition hover:bg-surface-container" onClick={checkSession} type="button">
+              <button
+                className="mt-4 w-full rounded-lg border border-outline-variant px-4 py-2.5 text-sm font-medium text-on-surface-variant transition hover:bg-surface-container"
+                onClick={checkSession}
+                type="button"
+              >
                 Retry connection
               </button>
             )}
@@ -191,11 +319,7 @@ export default function AuthGate({ children }) {
   return (
     <>
       {typeof children === "function" ? children({ requestSignOut }) : children}
-      {error && (
-        <p className="fixed bottom-16 right-4 z-50 rounded-xl border border-error/20 bg-error-container px-4 py-3 text-sm text-on-error-container shadow-elevation-1" role="alert">
-          {error}
-        </p>
-      )}
+
       <ConfirmModal
         isOpen={confirmingSignOut}
         title="Sign out?"
