@@ -120,13 +120,20 @@ The app requires one shared password before loading its data. The Express API al
 
 ### Hosted setup
 
-Before deploying the frontend/backend code, set these backend environment variables in the hosting provider:
+For the Netlify frontend and Render backend, the app proxies `/api` through Netlify so the browser uses the Netlify origin for both the app and its session cookie. This avoids mobile browsers blocking the login cookie as third-party data. The proxy target is configured in `netlify.toml`.
+
+In Netlify, set the build command to `npm run build` and the publish directory to `dist`. Do not set `VITE_API_URL`; the frontend calls `/api` on the same origin, and Netlify forwards those requests to Render. Redeploy the site after changing the build or redirect configuration.
+
+Set these backend environment variables in Render:
 
 - `AUTH_PASSWORD_HASH`: a scrypt hash generated with `npm run auth:hash` (the hash from local `.env` can also be reused).
-- `CLIENT_URL`: the exact hosted frontend origin, for example `https://pagms.netlify.app` (no path required).
-- `NODE_ENV=production`: enables Secure, cross-site cookies for the separately hosted frontend and API.
+- `CLIENT_URL=https://pagms.netlify.app`: the exact hosted frontend origin (no trailing slash or path).
+- `NODE_ENV=production`: enables Secure session cookies.
 - `TRUST_PROXY_HOPS=1`: configure this only when the API is behind one trusted reverse proxy, such as Render.
-- Keep `VITE_API_URL` configured in the frontend build to the API's HTTPS origin.
+
+The Render service must use the same Neon PostgreSQL database for every request. In Render, configure the database connection variables (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`) from the Neon connection details. The access key is shared, but each browser signs in separately and receives its own 12-hour session.
+
+If the Render service URL changes, update the `/api/*` redirect target in `netlify.toml` to the new HTTPS origin and redeploy Netlify.
 
 The backend runs `CREATE TABLE IF NOT EXISTS` for the same authentication schema at startup. If applying database changes manually first, execute:
 
