@@ -82,6 +82,7 @@ export default function GradeConfigModal({
           <button
             onClick={handleCancel}
             className="p-1.5 hover:bg-slate-700 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-300 cursor-pointer"
+            aria-label="Close grading settings"
           >
             <X className="w-5 h-5" />
           </button>

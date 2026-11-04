@@ -4,6 +4,7 @@ import {
   ArrowRight,
   FileSpreadsheet,
   Settings,
+  LogOut,
   Users,
   RotateCcw,
   Plus,
@@ -35,7 +36,7 @@ import SmartGradeAnalyticsModal from "../components/SmartGradeAnalyticsModal";
 import { exportGradesToExcel, exportSemestralGradesToExcel } from "../utils/gradeExportUtils";
 import { analyzeTermGrades, analyzeSemestralGrades } from "../utils/gradeAnalytics";
 
-export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, appConfig: propAppConfig }) {
+export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, onSignOut, appConfig: propAppConfig }) {
   const { appConfig: hookAppConfig } = useSettings();
   const appConfig = propAppConfig || hookAppConfig;
   const [term, setTerm] = useState("midterm");
@@ -343,6 +344,15 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, a
             title="Reset Grades"
           >
             <RotateCcw className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </header>

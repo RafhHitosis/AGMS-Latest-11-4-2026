@@ -5,17 +5,13 @@ import GradingPage from "./pages/GradingPage";
 import { ThemeProvider } from "./context/ThemeContext";
 import AuthGate from "./components/AuthGate";
 
-function MainContent() {
-  const [activeSection, setActiveSection] = useState(null);
-  const [activeTool, setActiveTool] = useState(null); // 'attendance' | 'grading' | null
-
+function MainContent({ activeSection, activeTool, onSelectTool, onBack, onSignOut }) {
   const handleBack = () => {
-    setActiveSection(null);
-    setActiveTool(null);
+    onBack();
   };
 
   const handleSwitchTool = (newTool) => {
-    setActiveTool(newTool);
+    onSelectTool(activeSection, newTool);
   };
 
   if (activeSection && activeTool === "attendance") {
@@ -23,6 +19,7 @@ function MainContent() {
       <AttendancePage
         sectionId={activeSection}
         onBack={handleBack}
+        onSignOut={onSignOut}
         onSwitchToGrading={() => handleSwitchTool("grading")}
       />
     );
@@ -33,6 +30,7 @@ function MainContent() {
       <GradingPage
         sectionId={activeSection}
         onBack={handleBack}
+        onSignOut={onSignOut}
         onSwitchToAttendance={() => handleSwitchTool("attendance")}
       />
     );
@@ -40,19 +38,38 @@ function MainContent() {
 
   return (
     <SectionSelection
-      onSelectTool={(section, tool) => {
-        setActiveSection(section);
-        setActiveTool(tool);
-      }}
+      onSelectTool={onSelectTool}
+      onSignOut={onSignOut}
     />
   );
 }
 
 function App() {
+  const [activeSection, setActiveSection] = useState(null);
+  const [activeTool, setActiveTool] = useState(null);
+
+  const handleSelectTool = (section, tool) => {
+    setActiveSection(section);
+    setActiveTool(tool);
+  };
+
+  const handleBack = () => {
+    setActiveSection(null);
+    setActiveTool(null);
+  };
+
   return (
     <ThemeProvider>
       <AuthGate>
-        <MainContent />
+        {({ requestSignOut }) => (
+          <MainContent
+            activeSection={activeSection}
+            activeTool={activeTool}
+            onSelectTool={handleSelectTool}
+            onBack={handleBack}
+            onSignOut={requestSignOut}
+          />
+        )}
       </AuthGate>
     </ThemeProvider>
   );

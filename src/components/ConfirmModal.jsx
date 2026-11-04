@@ -9,6 +9,7 @@ export default function ConfirmModal({
   isDestructive = false,
   hideCancel = false,
   confirmText = "Confirm",
+  isConfirming = false,
 }) {
   if (!isOpen) return null;
 
@@ -30,6 +31,7 @@ export default function ConfirmModal({
           {!hideCancel && (
             <button
               onClick={onCancel}
+              disabled={isConfirming}
               className="px-4 py-2 text-sm font-medium text-primary hover:bg-surface-container-high rounded-full transition-colors cursor-pointer"
             >
               Cancel
@@ -39,6 +41,7 @@ export default function ConfirmModal({
             onClick={() => {
               onConfirm();
             }}
+            disabled={isConfirming}
             className={`px-4 py-2 text-sm font-bold rounded-full transition-colors shadow-sm cursor-pointer ${
               isDestructive
                 ? "bg-error text-on-error hover:bg-error/90"

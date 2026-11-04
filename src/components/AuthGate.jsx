@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { Eye, EyeOff, LoaderCircle, LockKeyhole, LogOut, ShieldCheck } from "lucide-react";
+import {
+  BookOpenCheck,
+  ClipboardCheck,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  LockKeyhole,
+  ShieldCheck,
+} from "lucide-react";
 import { api } from "../lib/api";
+import ConfirmModal from "./ConfirmModal";
+import bgPattern from "../assets/bg.png";
 
 export default function AuthGate({ children }) {
   const [authenticated, setAuthenticated] = useState(false);
@@ -9,6 +19,7 @@ export default function AuthGate({ children }) {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
 
   const checkSession = useCallback(async () => {
     setChecking(true);
@@ -44,14 +55,21 @@ export default function AuthGate({ children }) {
 
   const handleLogout = async () => {
     setBusy(true);
+    setError("");
     try {
       await api.logout();
       setAuthenticated(false);
+      setConfirmingSignOut(false);
     } catch (logoutError) {
       setError(logoutError.message || "Unable to sign out. Please try again.");
     } finally {
       setBusy(false);
     }
+  };
+
+  const requestSignOut = () => {
+    setError("");
+    setConfirmingSignOut(true);
   };
 
   if (checking) {
@@ -64,71 +82,107 @@ export default function AuthGate({ children }) {
 
   if (!authenticated) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-surface-container-low px-4 py-10">
-        <section className="w-full max-w-md rounded-3xl border border-outline-variant bg-surface p-8 shadow-elevation-2 sm:p-10">
-          <div className="mb-7 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-container text-on-primary-container">
-            <ShieldCheck className="h-7 w-7" aria-hidden="true" />
+      <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-surface-container-low px-4 py-10 text-on-surface">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0 left-0 right-0 h-[300px] bg-bottom bg-repeat-x opacity-40 dark:opacity-20 md:h-[400px]"
+          style={{ backgroundImage: `url(${bgPattern})`, backgroundSize: "auto 100%" }}
+        />
+        <section className="relative grid w-full max-w-3xl overflow-hidden rounded-2xl border border-outline-variant/60 bg-surface shadow-elevation-2 md:grid-cols-2">
+          <div className="flex flex-col justify-center bg-surface-container-low px-7 py-8 sm:px-9 sm:py-10">
+            <div className="mb-8 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-on-primary">
+                <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div>
+                <h1 className="text-base font-bold tracking-tight text-on-surface">
+                  Attendance &amp; Grading
+                </h1>
+                <p className="mt-0.5 text-xs text-on-surface-variant">Class management</p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="flex gap-3">
+                <ClipboardCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                <div>
+                  <h2 className="text-sm font-semibold text-on-surface">Attendance</h2>
+                  <p className="mt-1 text-sm leading-5 text-on-surface-variant">
+                    Mark daily attendance, manage holidays, and export records.
+                  </p>
+                </div>
+              </div>
+              <div className="h-px bg-outline-variant/60" />
+              <div className="flex gap-3">
+                <BookOpenCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                <div>
+                  <h2 className="text-sm font-semibold text-on-surface">Grading</h2>
+                  <p className="mt-1 text-sm leading-5 text-on-surface-variant">
+                    Enter assessment scores, calculate term grades, and review results.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
-          <p className="mb-2 text-sm font-semibold uppercase tracking-[0.16em] text-primary">
-            Secure access
-          </p>
-          <h1 className="text-2xl font-bold text-on-surface">Attendance &amp; Grading</h1>
-          <p className="mt-2 text-sm leading-6 text-on-surface-variant">
-            Enter the access password to continue.
-          </p>
 
-          <form className="mt-8 space-y-5" onSubmit={handleLogin}>
-            <label className="block text-sm font-medium text-on-surface" htmlFor="access-password">
-              Access password
-              <span className="relative mt-2 block">
-                <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-on-surface-variant" />
-                <input
-                  autoComplete="current-password"
-                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low py-3 pl-11 pr-12 text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  disabled={busy}
-                  id="access-password"
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                />
-                <button
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-on-surface-variant hover:text-on-surface"
-                  onClick={() => setShowPassword((visible) => !visible)}
-                  tabIndex={-1}
-                  type="button"
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </span>
-            </label>
-
-            {error && (
-              <p className="rounded-xl border border-error/20 bg-error-container px-4 py-3 text-sm text-on-error-container" role="alert">
-                {error}
+          <div className="flex flex-col justify-center border-t border-outline-variant/60 bg-surface px-7 py-8 sm:px-9 sm:py-10 md:border-l md:border-t-0">
+            <div className="mb-7">
+              <h2 className="text-xl font-bold tracking-tight text-on-surface">Enter access key</h2>
+              <p className="mt-1.5 text-sm text-on-surface-variant">
+                Use the shared access key to continue.
               </p>
+            </div>
+
+            <form className="space-y-5" onSubmit={handleLogin}>
+              <label className="block text-sm font-medium text-on-surface" htmlFor="access-password">
+                Access key
+                <span className="relative mt-2 block">
+                  <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-on-surface-variant" />
+                  <input
+                    autoComplete="current-password"
+                    autoFocus
+                    className="w-full rounded-lg border border-outline-variant bg-surface py-3 pl-11 pr-12 text-sm text-on-surface outline-none transition placeholder:text-on-surface-variant focus:border-primary focus:ring-2 focus:ring-primary/15"
+                    disabled={busy}
+                    id="access-password"
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                  />
+                  <button
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-on-surface-variant transition hover:text-on-surface"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    tabIndex={-1}
+                    type="button"
+                  >
+                    {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+                  </button>
+                </span>
+              </label>
+
+              {error && (
+                <p className="rounded-lg border border-error/20 bg-error-container px-4 py-3 text-sm leading-5 text-on-error-container" role="alert">
+                  {error}
+                </p>
+              )}
+
+              <button
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-on-primary transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={busy || !password}
+                type="submit"
+              >
+                {busy && <LoaderCircle className="h-[18px] w-[18px] animate-spin" />}
+                {busy ? "Verifying..." : "Continue"}
+              </button>
+            </form>
+
+            {error.startsWith("Unable to connect") && (
+              <button className="mt-4 w-full rounded-lg border border-outline-variant px-4 py-2.5 text-sm font-medium text-on-surface-variant transition hover:bg-surface-container" onClick={checkSession} type="button">
+                Retry connection
+              </button>
             )}
-
-            <button
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 font-semibold text-on-primary transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={busy || !password}
-              type="submit"
-            >
-              {busy && <LoaderCircle className="h-5 w-5 animate-spin" />}
-              {busy ? "Verifying..." : "Continue"}
-            </button>
-          </form>
-
-          {error.startsWith("Unable to connect") && (
-            <button
-              className="mt-4 w-full rounded-xl border border-outline-variant px-4 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container"
-              onClick={checkSession}
-              type="button"
-            >
-              Retry connection
-            </button>
-          )}
+          </div>
         </section>
       </main>
     );
@@ -136,22 +190,22 @@ export default function AuthGate({ children }) {
 
   return (
     <>
-      {children}
-      <button
-        aria-label="Sign out"
-        className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border border-outline-variant bg-surface px-4 py-2.5 text-sm font-semibold text-on-surface shadow-elevation-2 transition hover:bg-surface-container disabled:opacity-60"
-        disabled={busy}
-        onClick={handleLogout}
-        type="button"
-      >
-        <LogOut className="h-4 w-4" />
-        Sign out
-      </button>
+      {typeof children === "function" ? children({ requestSignOut }) : children}
       {error && (
         <p className="fixed bottom-16 right-4 z-50 rounded-xl border border-error/20 bg-error-container px-4 py-3 text-sm text-on-error-container shadow-elevation-1" role="alert">
           {error}
         </p>
       )}
+      <ConfirmModal
+        isOpen={confirmingSignOut}
+        title="Sign out?"
+        message="Are you sure you want to sign out of Attendance & Grading?"
+        onConfirm={handleLogout}
+        onCancel={() => setConfirmingSignOut(false)}
+        confirmText={busy ? "Signing out..." : "Sign out"}
+        isConfirming={busy}
+        isDestructive
+      />
     </>
   );
 }

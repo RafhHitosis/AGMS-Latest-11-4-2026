@@ -4,6 +4,7 @@ import {
   Users,
   Calendar,
   Settings,
+  LogOut,
   Search,
   Check,
   GraduationCap,
@@ -20,7 +21,7 @@ import ConfigModal from "./ConfigModal";
 import ToolSelectionModal from "./ToolSelectionModal";
 import bgPattern from "../assets/bg.png";
 
-export default function SectionSelection({ onSelectTool, onSelectSection }) {
+export default function SectionSelection({ onSelectTool, onSelectSection, onSignOut }) {
   const [selectedYear, setSelectedYear] = useState(null);
   const [yearSearch, setYearSearch] = useState("");
   const [sectionSearch, setSectionSearch] = useState("");
@@ -123,12 +124,22 @@ export default function SectionSelection({ onSelectTool, onSelectSection }) {
         }}
       />
 
-      {/* Settings Button */}
-      <div className="absolute top-4 right-4 z-20">
+      {/* Page actions */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-outline-variant/30 bg-surface text-on-surface-variant shadow-xs transition-colors hover:border-error/30 hover:bg-error-container hover:text-on-error-container dark:hover:border-red-400/30 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+          title="Sign out"
+          aria-label="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
         <button
           onClick={() => setIsConfigOpen(true)}
-          className="p-2.5 rounded-full bg-surface border border-outline-variant/30 shadow-xs hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-surface border border-outline-variant/30 shadow-xs hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
           title="App Configuration & Settings"
+          aria-label="App Configuration & Settings"
         >
           <Settings className="w-5 h-5" />
         </button>

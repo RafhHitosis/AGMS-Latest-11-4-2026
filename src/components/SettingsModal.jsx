@@ -327,6 +327,7 @@ export default function SettingsModal({
             onClick={handleClose}
             className="p-1.5 hover:bg-slate-700 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-300 cursor-pointer"
             title="Close"
+            aria-label="Close settings"
           >
             <X className="w-5 h-5" />
           </button>
