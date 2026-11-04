@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+
+  /* Custom Rich Dark Slate Shades */
+  --color-slate-750: #243044;
+  --color-slate-850: #141c2e;
+  --color-slate-950: #0b0f19;
+
+  /* M3 Core Colors (Emerald/Green Base) */
+  --color-primary: #047857; /* Emerald 700 */
+  --color-on-primary: #ffffff;
+  --color-primary-container: #d1fae5; /* Emerald 100 */
+  --color-on-primary-container: #064e3b; /* Emerald 900 */
+
+  --color-secondary: #475569; /* Slate 600 */
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #e2e8f0; /* Slate 200 */
+  --color-on-secondary-container: #1e293b; /* Slate 800 */
+
+  --color-tertiary: #15803d; /* Green 700 */
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #dcfce7; /* Green 100 */
+  --color-on-tertiary-container: #14532d; /* Green 900 */
+
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #410002;
+
+  --color-surface: #ffffff;
+  --color-on-surface: #1e293b;
+  --color-surface-container-low: #f8fafc; /* Slate 50 */
+  --color-surface-container: #f1f5f9; /* Slate 100 */
+  --color-surface-container-high: #e2e8f0; /* Slate 200 */
+  --color-surface-variant: #e2e8f0;
+  --color-on-surface-variant: #475569;
+  --color-outline: #94a3b8;
+  --color-outline-variant: #cbd5e1;
+
+  /* Custom Elevation for M3 Shadows */
+  --shadow-elevation-1:
+    0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-2:
+    0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-3:
+    0px 4px 8px 3px rgba(0, 0, 0, 0.15), 0px 1px 3px 0px rgba(0, 0, 0, 0.3);
+}
+
+.dark {
+  --color-primary: #10b981;
+  --color-on-primary: #022c22;
+  --color-primary-container: #064e3b;
+  --color-on-primary-container: #a7f3d0;
+
+  --color-secondary: #94a3b8;
+  --color-on-secondary: #0f172a;
+  --color-secondary-container: #1e293b;
+  --color-on-secondary-container: #f1f5f9;
+
+  --color-tertiary: #22c55e;
+  --color-on-tertiary: #052e16;
+  --color-tertiary-container: #14532d;
+  --color-on-tertiary-container: #bbf7d0;
+
+  --color-surface: #0f172a; /* Slate 900 base */
+  --color-on-surface: #f8fafc; /* Crisp Slate 50 text */
+  --color-surface-container-low: #0b0f19; /* Deep Slate 950 body */
+  --color-surface-container: #141c2e; /* Slate 850 card base */
+  --color-surface-container-high: #1e293b; /* Slate 800 elevated */
+  --color-surface-variant: #1e293b;
+  --color-on-surface-variant: #94a3b8; /* Muted Slate 400 */
+  --color-outline: #64748b;
+  --color-outline-variant: #334155; /* Slate 700 crisp borders */
+  color-scheme: dark;
+}
+
+@layer base {
+  body {
+    @apply font-sans bg-surface-container-low text-on-surface antialiased transition-colors duration-150;
+  }
+  .dark body {
+    background-color: #0b0f19;
+    color: #f8fafc;
+  }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+  input::-webkit-outer-spin-button,
+  input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: #334155;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: #475569;
+}
