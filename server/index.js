@@ -17,9 +17,31 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const clientOrigins = process.env.CLIENT_URL
+  ?.split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 // Middleware
-app.use(cors());
+if (clientOrigins?.length) {
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        const isLocalOrigin =
+          origin && /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin);
+
+        if (!origin || clientOrigins.includes(origin) || isLocalOrigin) {
+          callback(null, true);
+          return;
+        }
+
+        callback(new Error("Not allowed by CORS"));
+      },
+    }),
+  );
+} else {
+  app.use(cors());
+}
 app.use(express.json());
 app.use(requestLogger);
 

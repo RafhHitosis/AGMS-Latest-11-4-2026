@@ -1,6 +1,6 @@
 // API client service communicating with the PostgreSQL Express backend
 
-const API_BASE = "/api";
+const API_BASE = `${import.meta.env.VITE_API_URL?.replace(/\/+$/, "") || ""}/api`;
 
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
