@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { useSettings } from "../hooks/useSettings";
-import api from "../lib/api";
 import ConfigModal from "./ConfigModal";
 import ToolSelectionModal from "./ToolSelectionModal";
 import bgPattern from "../assets/bg.png";
@@ -33,40 +32,35 @@ export default function SectionSelection({ onSelectTool, onSelectSection, onSign
     updateAppTitle,
     updateAppSubtitle,
     updateAppLogo,
-    updateSections,
-    updateClassSchedules,
+    updateSectionConfiguration,
     loading,
+    refreshConfig,
   } = useSettings();
 
-  const handleSaveConfig = async (newConfig, trackedDeletedSections = []) => {
-    const oldSections = Object.values(appConfig.sections || {}).flat();
-    const newSections = Object.values(newConfig.sections || {}).flat();
-    const deletedSections = [...new Set([
-      ...oldSections.filter(s => !newSections.includes(s)),
-      ...trackedDeletedSections
-    ])];
+  const handleSaveConfig = async (newConfig, sectionCopies = [], archiveIds = []) => {
+    try {
+      const result = await updateSectionConfiguration(
+        newConfig.sections,
+        newConfig.schedules || {},
+        sectionCopies,
+        archiveIds,
+      );
+      await updateAppTitle(newConfig.title);
+      if (newConfig.subtitle !== undefined) {
+        await updateAppSubtitle(newConfig.subtitle);
+      }
+      if (newConfig.logo !== undefined) {
+        await updateAppLogo(newConfig.logo);
+      }
 
-    // Clear data from DB for deleted sections
-    for (const sec of deletedSections) {
-      await api.deleteSectionData(sec);
-    }
-
-    const cleanedSchedules = { ...(newConfig.schedules || {}) };
-    deletedSections.forEach(s => delete cleanedSchedules[s]);
-
-    await updateAppTitle(newConfig.title);
-    if (newConfig.subtitle !== undefined) {
-      await updateAppSubtitle(newConfig.subtitle);
-    }
-    if (newConfig.logo !== undefined) {
-      await updateAppLogo(newConfig.logo);
-    }
-    await updateSections(newConfig.sections);
-    await updateClassSchedules(cleanedSchedules);
-
-    // If the currently selected year was deleted/renamed, reset selection
-    if (selectedYear && !newConfig.sections[selectedYear]) {
-      setSelectedYear(null);
+      // If the currently selected year was deleted/renamed, reset selection
+      if (selectedYear && !newConfig.sections[selectedYear]) {
+        setSelectedYear(null);
+      }
+      return result;
+    } catch (error) {
+      await refreshConfig();
+      throw error;
     }
   };
 

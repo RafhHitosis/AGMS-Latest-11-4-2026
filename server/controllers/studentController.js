@@ -121,14 +121,3 @@ export const deleteAllStudentsBySection = async (req, res, next) => {
     next(err);
   }
 };
-
-export const deleteSectionData = async (req, res, next) => {
-  try {
-    const { sectionId } = req.params;
-    await query("DELETE FROM attendance WHERE section_id = $1", [sectionId]);
-    await query("DELETE FROM students WHERE section_id = $1", [sectionId]);
-    res.json({ success: true, message: `All data cleared for section ${sectionId}` });
-  } catch (err) {
-    next(err);
-  }
-};

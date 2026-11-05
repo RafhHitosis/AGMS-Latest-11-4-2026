@@ -52,6 +52,18 @@ CREATE TABLE IF NOT EXISTS students (
 CREATE INDEX IF NOT EXISTS idx_students_section ON students (section_id);
 CREATE INDEX IF NOT EXISTS idx_students_section_name ON students (section_id, name);
 
+-- 2a. Recoverable section archives
+CREATE TABLE IF NOT EXISTS section_archives (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    section_id VARCHAR(50) NOT NULL,
+    year_level VARCHAR(255) NOT NULL,
+    section_data JSONB NOT NULL,
+    archived_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_section_archives_expires_at ON section_archives (expires_at);
+
 -- 3. Attendance Table
 -- Presence of a record represents 'absent', matching existing workflow
 CREATE TABLE IF NOT EXISTS attendance (

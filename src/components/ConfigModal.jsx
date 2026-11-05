@@ -27,12 +27,23 @@ import clsx from "clsx";
 import ConfirmModal from "./ConfirmModal";
 import { useTheme } from "../context/ThemeContext";
 import { useToast } from "../context/ToastContext";
+import api from "../lib/api";
+import {
+  getExpectedYearLevelPrefix,
+  getSectionNamingError,
+  getSectionNamingErrors,
+} from "../../shared/sectionNaming.js";
 
 const DAY_SHORT_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function ConfigModal({ isOpen, onClose, config, onSave }) {
   const [localConfig, setLocalConfig] = useState(config);
-  const [deletedSections, setDeletedSections] = useState([]);
+  const initializedForOpen = React.useRef(false);
+  const [sectionCopies, setSectionCopies] = useState([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [archivedSections, setArchivedSections] = useState([]);
+  const [pendingRestores, setPendingRestores] = useState([]);
+  const [isLoadingArchives, setIsLoadingArchives] = useState(false);
   const [activeTab, setActiveTab] = useState("sections"); // "sections" is default active tab
   const { theme, isDark, setTheme } = useTheme();
   const toast = useToast();
@@ -59,13 +70,41 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
   });
 
   React.useEffect(() => {
-    if (isOpen && config) {
+    if (!isOpen) {
+      initializedForOpen.current = false;
+      return;
+    }
+    if (config && !initializedForOpen.current) {
       setLocalConfig(JSON.parse(JSON.stringify(config))); // Deep copy
-      setDeletedSections([]); // Reset tracked deletions
+      setSectionCopies([]);
+      setPendingRestores([]);
       setActiveTab("sections"); // Always start on sections tab when opened
       setSelectedTheme(theme); // Reset theme selection to current active theme
+      initializedForOpen.current = true;
     }
   }, [isOpen, config, theme]);
+
+  React.useEffect(() => {
+    if (!isOpen) return undefined;
+    let isCurrent = true;
+    setIsLoadingArchives(true);
+    api.getSectionArchives()
+      .then((archives) => {
+        if (isCurrent) setArchivedSections(archives);
+      })
+      .catch((error) => {
+        console.error("Failed to load section archives:", error);
+        if (isCurrent) {
+          toast.error(`Could not load deleted sections: ${error.message || "Please try again."}`);
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoadingArchives(false);
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [isOpen, toast]);
 
   if (!isOpen) return null;
 
@@ -156,23 +195,34 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
     }));
   };
 
+  const removeInvalidSectionCopies = (sections) => {
+    const activeSections = new Set(Object.values(sections).flat());
+    setSectionCopies((current) =>
+      current.filter(
+        ({ sourceSectionId, targetSectionId }) =>
+          activeSections.has(sourceSectionId) && activeSections.has(targetSectionId),
+      ),
+    );
+  };
+
   const executeRenameYear = (oldName, newName) => {
     if (oldName === newName) return;
-    if (localConfig.sections[newName]) {
+    if (Object.keys(localConfig.sections).some(
+      (yearName) => yearName !== oldName && yearName.toLowerCase() === newName.toLowerCase(),
+    )) {
       toast.warn("That year level already exists. Choose a different name to keep your sections organized.");
       return;
     }
-
-    const newSectionsObj = {};
-    Object.keys(localConfig.sections).forEach((key) => {
-      if (key === oldName) {
-        newSectionsObj[newName] = localConfig.sections[oldName];
-      } else {
-        newSectionsObj[key] = localConfig.sections[key];
-      }
-    });
-
-    setLocalConfig((prev) => ({ ...prev, sections: newSectionsObj }));
+    const renamedSections = { ...localConfig.sections };
+    const sectionsToRename = renamedSections[oldName] || [];
+    delete renamedSections[oldName];
+    renamedSections[newName] = sectionsToRename;
+    const namingError = getSectionNamingErrors(renamedSections, localConfig.sections)[0];
+    if (namingError) {
+      toast.warn(namingError);
+      return;
+    }
+    setLocalConfig((prev) => ({ ...prev, sections: renamedSections }));
     closeInputModal();
   };
 
@@ -205,25 +255,42 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
 
   const executeDeleteYear = (yearName) => {
     const newSectionsObj = { ...localConfig.sections };
-    const toDelete = newSectionsObj[yearName] || [];
-    setDeletedSections((prev) => [...prev, ...toDelete]);
 
     delete newSectionsObj[yearName];
+    removeInvalidSectionCopies(newSectionsObj);
+    setPendingRestores((current) =>
+      current.filter((pending) => pending.archive.year_level !== yearName),
+    );
     setLocalConfig((prev) => ({ ...prev, sections: newSectionsObj }));
     closeConfirmModal();
   };
 
   const handleDeleteYearRequest = (yearName) => {
+    const sections = localConfig.sections[yearName] || [];
+    const namesStillUsed = sections.filter(
+      (section) => Object.entries(localConfig.sections).some(
+        ([otherYear, otherSections]) => otherYear !== yearName && otherSections.includes(section),
+      ),
+    );
+    const dataImpact = sections.length === 0
+      ? "No sections or section data will be removed."
+      : `Sections: ${sections.join(", ")}. Their students, attendance, grades, grading settings, and schedules will be archived for 30 days when you save, except for section names still used by another year level (${namesStillUsed.join(", ") || "none"}).`;
     setDeleteModal({
       isOpen: true,
       title: "Delete Year Level?",
-      message: `Are you sure you want to delete "${yearName}" and all its sections?`,
+      message: `Delete "${yearName}" and all its sections? ${dataImpact}`,
       onConfirm: () => executeDeleteYear(yearName),
     });
   };
 
   const executeAddSection = (yearName, sectionName) => {
     if (sectionName) {
+      const namingError = getSectionNamingError(yearName, sectionName, localConfig.sections);
+      if (namingError) {
+        toast.warn(namingError);
+        closeInputModal();
+        return;
+      }
       const currentSections = localConfig.sections[yearName] || [];
       if (currentSections.includes(sectionName)) return;
       handleSectionChange(yearName, [...currentSections, sectionName].sort());
@@ -252,49 +319,215 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
   const executeRenameSection = (yearName, oldSection, newSection) => {
     if (newSection && newSection !== oldSection) {
       const currentSections = localConfig.sections[yearName];
+      const namingError = getSectionNamingError(yearName, newSection, localConfig.sections);
+      if (namingError) {
+        toast.warn(namingError);
+        closeInputModal();
+        closeConfirmModal();
+        return false;
+      }
+      if (currentSections.includes(newSection)) {
+        toast.warn("That section already exists in this year level. Choose a different name.");
+        closeInputModal();
+        closeConfirmModal();
+        return false;
+      }
       const updated = currentSections
         .map((s) => (s === oldSection ? newSection : s))
         .sort();
       handleSectionChange(yearName, updated);
+      setPendingRestores((current) =>
+        current.filter((pending) => pending.archive.section_id !== oldSection),
+      );
+      removeInvalidSectionCopies({
+        ...localConfig.sections,
+        [yearName]: updated,
+      });
+      setLocalConfig((prev) => ({
+        ...prev,
+        schedules: {
+          ...prev.schedules,
+          [newSection]: prev.schedules?.[oldSection] || [],
+        },
+      }));
     }
     closeInputModal();
+    closeConfirmModal();
+    return true;
   };
 
   const handleRenameSectionRequest = (yearName, oldSection) => {
+    const sharedElsewhere = Object.entries(localConfig.sections).some(
+      ([otherYear, sections]) => otherYear !== yearName && sections.includes(oldSection),
+    );
     setInputModal({
       isOpen: true,
       title: "Rename Section",
       defaultValue: oldSection,
-      onConfirm: (val) => executeRenameSection(yearName, oldSection, val),
+      onConfirm: (val) => {
+        if (val === oldSection) {
+          closeInputModal();
+          return;
+        }
+        setDeleteModal({
+          isOpen: true,
+          title: "Rename Section?",
+          message: sharedElsewhere
+            ? `Renaming "${oldSection}" to "${val}" copies its students, attendance, grades, grading settings, and schedule to the new section. The original data remains available to the other year level.`
+            : `Renaming "${oldSection}" to "${val}" creates a new section. The old section's students, attendance, grades, grading settings, and schedule will be archived for 30 days when you save.`,
+          onConfirm: () => {
+            const renamed = executeRenameSection(yearName, oldSection, val);
+            if (renamed && sharedElsewhere) {
+              setSectionCopies((current) => [
+                ...current.filter((copy) => copy.targetSectionId !== val),
+                { sourceSectionId: oldSection, targetSectionId: val },
+              ]);
+            }
+          },
+        });
+      },
     });
   };
 
   const executeDeleteSection = (yearName, sectionName) => {
     const currentSections = localConfig.sections[yearName];
     const updated = currentSections.filter((s) => s !== sectionName);
-    setDeletedSections((prev) => [...prev, sectionName]);
+    removeInvalidSectionCopies({
+      ...localConfig.sections,
+      [yearName]: updated,
+    });
+    setPendingRestores((current) =>
+      current.filter((pending) => pending.archive.section_id !== sectionName),
+    );
     handleSectionChange(yearName, updated);
     closeConfirmModal();
   };
 
   const handleDeleteSectionRequest = (yearName, sectionName) => {
+    const sharedElsewhere = Object.entries(localConfig.sections).some(
+      ([otherYear, sections]) => otherYear !== yearName && sections.includes(sectionName),
+    );
     setDeleteModal({
       isOpen: true,
       title: "Delete Section?",
-      message: `Remove Section "${sectionName}"?`,
+      message: `Remove Section "${sectionName}"? Its students, attendance, grades, grading settings, and schedule will be archived for 30 days when you save${sharedElsewhere ? ", unless this section name remains assigned to another year level" : ""}.`,
       onConfirm: () => executeDeleteSection(yearName, sectionName),
     });
   };
 
-  const save = () => {
-    if (selectedTheme !== theme) {
-      setTheme(selectedTheme);
+  const restoreArchivedSection = (archive) => {
+    if (pendingRestores.some((pending) => pending.archive.id === archive.id)) {
+      const pending = pendingRestores.find((item) => item.archive.id === archive.id);
+      setPendingRestores((current) =>
+        current.filter((pending) => pending.archive.id !== archive.id),
+      );
+      setLocalConfig((current) => {
+        const sections = { ...current.sections };
+        if (!pending.sectionWasPresent) {
+          sections[archive.year_level] = (sections[archive.year_level] || [])
+            .filter((section) => section !== archive.section_id);
+        }
+        if (!pending.yearLevelWasPresent && sections[archive.year_level]?.length === 0) {
+          delete sections[archive.year_level];
+        }
+        const schedules = { ...current.schedules };
+        if (pending.scheduleWasPresent) {
+          schedules[archive.section_id] = pending.previousSchedule;
+        } else {
+          delete schedules[archive.section_id];
+        }
+        return { ...current, sections, schedules };
+      });
+      return;
     }
-    onSave(localConfig, deletedSections);
-    onClose();
+
+    const sectionWasPresent = (localConfig.sections[archive.year_level] || [])
+      .includes(archive.section_id);
+    setPendingRestores((current) => [
+      ...current,
+      {
+        archive,
+        yearLevelWasPresent: Object.hasOwn(localConfig.sections, archive.year_level),
+        sectionWasPresent,
+        scheduleWasPresent: Object.hasOwn(localConfig.schedules || {}, archive.section_id),
+        previousSchedule: localConfig.schedules?.[archive.section_id],
+      },
+    ]);
+    setLocalConfig((current) => ({
+      ...current,
+      sections: {
+        ...current.sections,
+        [archive.year_level]: [
+          ...new Set([
+            ...(current.sections[archive.year_level] || []),
+            archive.section_id,
+          ]),
+        ],
+      },
+      schedules: {
+        ...current.schedules,
+        [archive.section_id]: Array.isArray(archive.schedule) ? archive.schedule : [],
+      },
+    }));
+    toast.info(`Section "${archive.section_id}" is staged. Click Save Changes to restore it.`);
+  };
+
+  const save = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const result = await onSave(
+        localConfig,
+        sectionCopies,
+        pendingRestores.map((pending) => pending.archive.id),
+      );
+      const previousSections = config?.sections || {};
+      const deletedYears = Object.keys(previousSections).filter(
+        (year) => !Object.hasOwn(localConfig.sections, year),
+      );
+      const removedSections = Object.entries(previousSections).flatMap(
+        ([year, sections]) => (sections || [])
+          .filter((section) =>
+            Object.hasOwn(localConfig.sections, year) &&
+            !(localConfig.sections[year] || []).includes(section),
+          )
+          .map((section) => ({ year, section })),
+      );
+      const archivedSectionIds = new Set(result?.deletedSections || []);
+      const changes = [
+        ...deletedYears.map((year) => {
+          const archived = (previousSections[year] || [])
+            .filter((section) => archivedSectionIds.has(section));
+          return archived.length > 0
+            ? `Year level "${year}" deleted; ${archived.join(", ")} archived for 30 days`
+            : `Year level "${year}" deleted`;
+        }),
+        ...removedSections.map(({ year, section }) =>
+          archivedSectionIds.has(section)
+            ? `Section "${section}" removed from ${year} and archived for 30 days`
+            : `Section "${section}" removed from ${year}; its data remains with another year level`,
+        ),
+      ];
+      if (changes.length > 0) {
+        toast.success(changes.join(". "));
+      }
+      for (const restored of result?.restoredSections || []) {
+        toast.success(`Section "${restored.sectionId}" was restored to ${restored.yearLevel}.`);
+      }
+      if (selectedTheme !== theme) {
+        setTheme(selectedTheme);
+      }
+      onClose();
+    } catch (error) {
+      console.error("Failed to save app configuration:", error);
+      toast.error(`Could not save configuration: ${error.message || "Please try again."}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancel = () => {
+    if (isSaving) return;
     setSelectedTheme(theme);
     onClose();
   };
@@ -454,6 +687,7 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
           </div>
           <button
             onClick={handleCancel}
+            disabled={isSaving}
             className="p-1.5 hover:bg-slate-700 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-300 cursor-pointer"
             title="Close"
           >
@@ -523,7 +757,7 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
                     Academic Structure &amp; Schedule
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Configure year levels, manage section blocks, and set weekly class meeting schedules.
+                    Section names must start with 1, 2, 3, or 4 for 1st, 2nd, 3rd, or 4th Year respectively.
                   </p>
                   <div className="flex flex-wrap items-center gap-2 mt-2">
                     <span className="text-[11px] px-2 py-0.5 rounded-md font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
@@ -547,6 +781,57 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
                 </button>
               </div>
 
+              <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/20 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                      Deleted Sections
+                    </h4>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      Section data is recoverable for 30 days. Restores apply only after you save.
+                    </p>
+                  </div>
+                  {isLoadingArchives && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Loading...</span>
+                  )}
+                </div>
+                {!isLoadingArchives && archivedSections.length === 0 && (
+                  <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                    No deleted sections are available to restore.
+                  </p>
+                )}
+                {archivedSections.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {archivedSections.map((archive) => (
+                      <div
+                        key={archive.id}
+                        className="flex flex-col gap-2 rounded-lg border border-amber-200/80 dark:border-amber-900/60 bg-white/80 dark:bg-slate-900/60 p-3 sm:flex-row sm:items-center"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                            {archive.year_level} · Section {archive.section_id}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {Number(archive.student_count)} students · Restorable until{" "}
+                            {new Date(archive.expires_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => restoreArchivedSection(archive)}
+                          className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-amber-700 disabled:cursor-wait disabled:opacity-60"
+                        >
+                          {pendingRestores.some((pending) => pending.archive.id === archive.id)
+                            ? "Undo staging"
+                            : "Stage restore"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Year Levels List */}
               <div className="space-y-4">
                 {Object.entries(localConfig.sections || {}).map(
@@ -562,6 +847,11 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
                         </div>
                         <span className="font-black text-sm text-slate-800 dark:text-slate-100">
                           {yearName}
+                        </span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                          {getExpectedYearLevelPrefix(yearName)
+                            ? `Prefix: ${getExpectedYearLevelPrefix(yearName)}`
+                            : "Rename to a supported year level to add sections"}
                         </span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-750 text-slate-600 dark:text-slate-300">
                           {sections.length} {sections.length === 1 ? "Section" : "Sections"}
@@ -933,6 +1223,7 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
             <button
               type="button"
               onClick={handleCancel}
+              disabled={isSaving}
               className="px-4 py-2 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
               Cancel
@@ -940,10 +1231,11 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
             <button
               type="button"
               onClick={save}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:shadow"
+              disabled={isSaving}
+              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:shadow disabled:cursor-wait"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Save Changes</span>
+              <span>{isSaving ? "Saving..." : "Save Changes"}</span>
             </button>
           </div>
         </div>

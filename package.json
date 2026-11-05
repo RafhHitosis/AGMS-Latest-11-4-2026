@@ -10,6 +10,7 @@
     "client": "vite --host",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node --test",
     "preview": "vite preview",
     "db:init": "node server/db/initDb.js",
     "db:reset": "node server/db/resetDb.js",

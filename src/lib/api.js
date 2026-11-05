@@ -77,10 +77,20 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ sections }),
     }),
+  updateSectionConfiguration: (sections, schedules, sectionCopies = [], archiveIds = []) =>
+    request("/config/section-configuration", {
+      method: "PUT",
+      body: JSON.stringify({ sections, schedules, sectionCopies, archiveIds }),
+    }),
   updateClassSchedules: (schedules) =>
     request("/config/schedules", {
       method: "PUT",
       body: JSON.stringify({ schedules }),
+    }),
+  getSectionArchives: () => request("/config/section-archives"),
+  restoreSectionArchive: (archiveId) =>
+    request(`/config/section-archives/${encodeURIComponent(archiveId)}/restore`, {
+      method: "POST",
     }),
   syncConfig: (config) =>
     request("/config/sync", {
@@ -113,11 +123,6 @@ export const api = {
     request(`/sections/${encodeURIComponent(sectionId)}/students`, {
       method: "DELETE",
     }),
-  deleteSectionData: (sectionId) =>
-    request(`/sections/${encodeURIComponent(sectionId)}`, {
-      method: "DELETE",
-    }),
-
   // --- Attendance ---
   getAttendance: (sectionId) =>
     request(`/sections/${encodeURIComponent(sectionId)}/attendance`),

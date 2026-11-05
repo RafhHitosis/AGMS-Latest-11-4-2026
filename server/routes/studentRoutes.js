@@ -6,7 +6,6 @@ import {
   updateStudent,
   deleteStudent,
   deleteAllStudentsBySection,
-  deleteSectionData,
 } from "../controllers/studentController.js";
 
 const router = Router();
@@ -17,6 +16,5 @@ router.post("/:sectionId/students/batch", batchAddStudents);
 router.put("/:sectionId/students/:id", updateStudent);
 router.delete("/:sectionId/students/:id", deleteStudent);
 router.delete("/:sectionId/students", deleteAllStudentsBySection);
-router.delete("/:sectionId", deleteSectionData);
 
 export default router;

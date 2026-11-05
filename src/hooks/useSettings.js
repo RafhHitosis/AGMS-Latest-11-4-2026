@@ -59,11 +59,7 @@ export const useSettings = () => {
   }, []);
 
   const updateAppLogo = useCallback(async (logo) => {
-    try {
-      await api.updateAppLogo(logo);
-    } catch (e) {
-      console.warn("Backend logo update failed, keeping in localStorage:", e);
-    }
+    await api.updateAppLogo(logo);
     if (logo) {
       localStorage.setItem("agms_app_logo", logo);
     } else {
@@ -75,6 +71,26 @@ export const useSettings = () => {
   const updateSections = useCallback(async (sections) => {
     await api.updateSections(sections);
     setAppConfig((prev) => ({ ...prev, sections }));
+  }, []);
+
+  const updateSectionConfiguration = useCallback(async (sections, schedules, sectionCopies, archiveIds) => {
+    const result = await api.updateSectionConfiguration(sections, schedules, sectionCopies, archiveIds);
+    setAppConfig((prev) => ({
+      ...prev,
+      sections: result.sections,
+      schedules: result.schedules,
+    }));
+    return result;
+  }, []);
+
+  const restoreSectionArchive = useCallback(async (archiveId) => {
+    const result = await api.restoreSectionArchive(archiveId);
+    setAppConfig((prev) => ({
+      ...prev,
+      sections: result.sections,
+      schedules: result.schedules,
+    }));
+    return result;
   }, []);
 
   const updateClassSchedules = useCallback(async (schedules) => {
@@ -90,6 +106,8 @@ export const useSettings = () => {
     updateAppSubtitle,
     updateAppLogo,
     updateSections,
+    updateSectionConfiguration,
+    restoreSectionArchive,
     updateClassSchedules,
     loading,
     error,

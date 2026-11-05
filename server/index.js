@@ -72,6 +72,19 @@ const startServer = async () => {
   try {
     // Ensure tables exist on startup
     await initializeDatabase();
+    await pool.query("DELETE FROM section_archives WHERE expires_at <= NOW()");
+    const archiveCleanupTimer = setInterval(() => {
+      pool.query("DELETE FROM section_archives WHERE expires_at <= NOW()")
+        .then((result) => {
+          if (result.rowCount > 0) {
+            console.log(`Purged ${result.rowCount} expired section archive(s).`);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to purge expired section archives:", err);
+        });
+    }, 24 * 60 * 60 * 1000);
+    archiveCleanupTimer.unref();
 
     const server = app.listen(PORT, () => {
       console.log(`===============================================`);
@@ -83,6 +96,7 @@ const startServer = async () => {
 
     const shutdown = async () => {
       console.log("\nShutting down gracefully...");
+      clearInterval(archiveCleanupTimer);
       server.close(() => {
         pool.end(() => {
           console.log("PostgreSQL pool closed. Exited.");

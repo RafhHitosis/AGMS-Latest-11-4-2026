@@ -9,6 +9,8 @@ A modern, responsive multi-application tool built with **React**, **Vite**, **Ta
 1. **Section Selection**:
    - Choose a Year Level (e.g., 1st Year, 2nd Year, etc.).
    - Click on any configured Section.
+   - Section names must start with `1`, `2`, `3`, or `4` for 1st, 2nd, 3rd, or 4th Year respectively.
+   - Deleting a year level or its last reference to a section archives its students, attendance, grades, grading settings, and schedule for 30 days. Restore archived sections from **Settings → Deleted Sections** before the archive expires.
 2. **Tool Selection Modal**:
    - Once a section is selected, choose between:
      - 📅 **Attendance System**: Track daily classroom attendance, mark absences, view holiday schedules, and export attendance spreadsheets.
@@ -91,6 +93,7 @@ server/
 - **`attendance`**: Daily attendance records (`section_id`, `student_id`, `date`, `status`).
 - **`grade_configs`**: Grading weights, transmutation ratings, and quiz column definitions per section & term.
 - **`grades`**: Student raw scores (PE, ME, +, –, quizzes, RT, AT override, remarks) per section & term.
+- **`section_archives`**: Deleted section data retained for 30 days and available for restoration.
 - **`holidays`**: Custom school and local holidays.
 
 ---
@@ -104,6 +107,7 @@ server/
 | **`npm run server`** | Runs only the Express API Server (`http://localhost:5000`) |
 | **`npm run client`** | Runs only the Vite dev server (`http://localhost:5173` or `5174`) |
 | **`npm run build`** | Builds the optimized production bundle |
+| **`npm test`** | Runs section deletion, restore, and naming-rule tests |
 | **`npm run db:init`** | Initializes database tables |
 | **`npm run db:reset`** | **Completely resets** the database, dropping all tables and recreating clean defaults |
 | **`npm run auth:hash`** | Creates a salted scrypt hash for the app access password (input is hidden) |
