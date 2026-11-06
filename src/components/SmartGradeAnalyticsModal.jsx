@@ -275,6 +275,7 @@ export default function SmartGradeAnalyticsModal({
 
   const tData = termAnalytics || {};
   const sData = semestralAnalytics || {};
+  const showingSemestral = currentTerm === "semestral" || activeTab === "semestral";
 
   // For term leaderboard: top 5 strictly PASSING students (never failed)
   const termTopPerformers = (tData.enrichedRows || [])
@@ -357,23 +358,25 @@ export default function SmartGradeAnalyticsModal({
         {/* Navigation Tabs */}
         <div className="bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 px-6 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab("term")}
-              className={clsx(
-                "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
-                activeTab === "term"
-                  ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-slate-200 dark:border-slate-700"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-              )}
-            >
-              <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>{currentTerm.toUpperCase()} Term</span>
-            </button>
+            {currentTerm !== "semestral" && (
+              <button
+                onClick={() => setActiveTab("term")}
+                className={clsx(
+                  "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
+                  activeTab === "term"
+                    ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-slate-200 dark:border-slate-700"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                )}
+              >
+                <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>{currentTerm.toUpperCase()} Term</span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab("semestral")}
               className={clsx(
                 "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
-                activeTab === "semestral"
+                showingSemestral
                   ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-slate-200 dark:border-slate-700"
                   : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
               )}
@@ -384,13 +387,13 @@ export default function SmartGradeAnalyticsModal({
           </div>
 
           <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-            {activeTab === "term" ? tData.totalStudents || 0 : sData.totalStudents || 0} Total Students
+            {showingSemestral ? sData.totalStudents || 0 : tData.totalStudents || 0} Total Students
           </div>
         </div>
 
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 bg-white dark:bg-slate-900">
-          {activeTab === "term" ? (
+          {!showingSemestral ? (
             <>
               {/* Top Statistics Benchmark Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

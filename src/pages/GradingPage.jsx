@@ -152,14 +152,16 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, o
         onSaveConfig={updateConfig}
       />
 
-      <SmartGradeAnalyticsModal
-        isOpen={isAnalyticsModalOpen}
-        onClose={() => setIsAnalyticsModalOpen(false)}
-        sectionId={sectionId}
-        currentTerm={activeSheet === "semestral" ? "semestral" : term}
-        termAnalytics={termAnalytics}
-        semestralAnalytics={semestralAnalytics}
-      />
+      {isAnalyticsModalOpen && (
+        <SmartGradeAnalyticsModal
+          isOpen={isAnalyticsModalOpen}
+          onClose={() => setIsAnalyticsModalOpen(false)}
+          sectionId={sectionId}
+          currentTerm={activeSheet === "semestral" ? "semestral" : term}
+          termAnalytics={termAnalytics}
+          semestralAnalytics={semestralAnalytics}
+        />
+      )}
 
       <ImportStudentsModal
         isOpen={isImportModalOpen}

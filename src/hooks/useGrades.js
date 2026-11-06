@@ -6,6 +6,7 @@ import {
   getEquivGrade,
   parseStudentNameAndMI,
 } from "../utils/gradeCalculations";
+import { createScoreSaveQueue } from "../utils/scoreSaveQueue";
 
 export const useGrades = (sectionId, term = "midterm") => {
   const [students, setStudents] = useState([]);
@@ -21,6 +22,15 @@ export const useGrades = (sectionId, term = "midterm") => {
   const [midtermOverview, setMidtermOverview] = useState({ config: null, grades: {} });
   const [finalsOverview, setFinalsOverview] = useState({ config: null, grades: {} });
 
+  const scoreSaveQueueRef = useRef(null);
+  if (!scoreSaveQueueRef.current) {
+    scoreSaveQueueRef.current = createScoreSaveQueue(
+      (saveSectionId, saveTerm, studentId, scores) =>
+        api.updateStudentScore(saveSectionId, saveTerm, studentId, scores)
+    );
+  }
+  const fetchRequestIdRef = useRef(0);
+
   const gradesRef = useRef(grades);
   useEffect(() => {
     gradesRef.current = grades;
@@ -28,15 +38,20 @@ export const useGrades = (sectionId, term = "midterm") => {
 
   const fetchGradeData = useCallback(async () => {
     if (!sectionId) return;
+    const requestId = ++fetchRequestIdRef.current;
     setLoading(true);
     setError(null);
     try {
+      await scoreSaveQueueRef.current.flush();
+      if (requestId !== fetchRequestIdRef.current) return;
+
       const [currentData, otherData, semData] = await Promise.all([
         api.getGrades(sectionId, term),
         api.getGrades(sectionId, term === "midterm" ? "finals" : "midterm"),
         api.getGrades(sectionId, "semestral"),
       ]);
 
+      if (requestId !== fetchRequestIdRef.current) return;
       setStudents(currentData.students || []);
       setConfig(currentData.config || {});
       setGrades(currentData.grades || {});
@@ -54,9 +69,9 @@ export const useGrades = (sectionId, term = "midterm") => {
       }
     } catch (err) {
       console.error("Failed to load grades from PostgreSQL:", err);
-      setError(err);
+      if (requestId === fetchRequestIdRef.current) setError(err);
     } finally {
-      setLoading(false);
+      if (requestId === fetchRequestIdRef.current) setLoading(false);
     }
   }, [sectionId, term]);
 
@@ -80,9 +95,15 @@ export const useGrades = (sectionId, term = "midterm") => {
         [studentId]: nextStudentScores,
       }));
 
-      // Persist to backend (merges into JSONB)
+      // Keep writes for each student and term ordered so an older keystroke cannot overwrite a newer one.
       try {
-        await api.updateStudentScore(sectionId, term, studentId, { [field]: value });
+        await scoreSaveQueueRef.current.save(
+          `${sectionId}:${term}:${studentId}`,
+          sectionId,
+          term,
+          studentId,
+          { [field]: value }
+        );
       } catch (err) {
         console.error("Failed to save score:", err);
       }
@@ -107,9 +128,15 @@ export const useGrades = (sectionId, term = "midterm") => {
         [studentId]: nextStudentScores,
       }));
 
-      // Persist to backend
+      // Keep quiz writes ordered because each request stores the complete quiz-score map.
       try {
-        await api.updateStudentScore(sectionId, term, studentId, { quizzes: nextQuizzes });
+        await scoreSaveQueueRef.current.save(
+          `${sectionId}:${term}:${studentId}`,
+          sectionId,
+          term,
+          studentId,
+          { quizzes: nextQuizzes }
+        );
       } catch (err) {
         console.error("Failed to save quiz score:", err);
       }
