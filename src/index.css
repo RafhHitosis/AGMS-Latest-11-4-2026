@@ -182,11 +182,11 @@
 }
 
 .grade-sheet-table:not(.grade-read-mode) tbody tr:hover > td {
-  background-color: #dbeafe !important;
+  background-color: #e2e8f0 !important;
 }
 
 .dark .grade-sheet-table:not(.grade-read-mode) tbody tr:hover > td {
-  background-color: #1e3a8a !important;
+  background-color: #1e293b !important;
 }
 
 @keyframes app-toast-enter {
