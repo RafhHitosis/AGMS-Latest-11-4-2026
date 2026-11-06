@@ -323,6 +323,9 @@ export default function SmartGradeAnalyticsModal({
   const declinedStudents = (sData.enrichedRows || [])
     .filter((r) => typeof r.smartJudgement?.delta === "number" && r.smartJudgement.delta <= -3.0)
     .slice(0, 6);
+  const comparableStudentCount = (sData.enrichedRows || []).filter(
+    (row) => typeof row.midtermGrade === "number" && typeof row.finalGrade === "number"
+  ).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
@@ -358,18 +361,20 @@ export default function SmartGradeAnalyticsModal({
         {/* Navigation Tabs */}
         <div className="bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 px-6 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab("term")}
-              className={clsx(
-                "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
-                !showingSemestral
-                  ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-slate-200 dark:border-slate-700"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-              )}
-            >
-              <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>{currentTerm === "semestral" ? "Selected Term Insights" : `${currentTerm.toUpperCase()} Term`}</span>
-            </button>
+            {currentTerm !== "semestral" && (
+              <button
+                onClick={() => setActiveTab("term")}
+                className={clsx(
+                  "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
+                  activeTab === "term"
+                    ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-slate-200 dark:border-slate-700"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                )}
+              >
+                <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>{currentTerm.toUpperCase()} Term</span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab("semestral")}
               className={clsx(
@@ -740,16 +745,14 @@ export default function SmartGradeAnalyticsModal({
               </div>
 
               {/* Trajectory: Improved vs Declined */}
-              {(improvedStudents.length > 0 || declinedStudents.length > 0) && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Improved */}
-                  {improvedStudents.length > 0 && (
-                    <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs">
+                  <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs">
                       <div className="flex items-center justify-between gap-1.5 mb-2.5 pb-2 border-b border-slate-100 dark:border-slate-800">
                         <div className="flex items-center gap-1.5">
                           <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                           <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs uppercase tracking-wider">
-                            Improved in Finals
+                            Improved in Finals (+3.00 or more)
                           </h4>
                         </div>
                         <HeaderInfoTooltip
@@ -758,8 +761,9 @@ export default function SmartGradeAnalyticsModal({
                           dataNote="Displays Midterm grade, Final Term grade, and the points gained (+)."
                         />
                       </div>
-                      <div className="space-y-1.5">
-                        {improvedStudents.map((st) => (
+                      {improvedStudents.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {improvedStudents.map((st) => (
                           <div
                             key={st.studentId}
                             className="bg-slate-50/80 dark:bg-slate-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2 text-xs"
@@ -779,19 +783,24 @@ export default function SmartGradeAnalyticsModal({
                               </span>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="py-4 text-center text-xs text-slate-500 dark:text-slate-400">
+                          {comparableStudentCount === 0
+                            ? "Enter both Midterm and Final grades to compare student progress."
+                            : "No students improved by 3.00 or more points."}
+                        </p>
+                      )}
+                  </div>
 
                   {/* Declined */}
-                  {declinedStudents.length > 0 && (
-                    <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs">
+                  <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs">
                       <div className="flex items-center justify-between gap-1.5 mb-2.5 pb-2 border-b border-slate-100 dark:border-slate-800">
                         <div className="flex items-center gap-1.5">
                           <TrendingDown className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                           <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs uppercase tracking-wider">
-                            Declined in Finals
+                            Declined in Finals (-3.00 or more)
                           </h4>
                         </div>
                         <HeaderInfoTooltip
@@ -800,8 +809,9 @@ export default function SmartGradeAnalyticsModal({
                           dataNote="Displays Midterm grade, Final Term grade, and the points dropped (−)."
                         />
                       </div>
-                      <div className="space-y-1.5">
-                        {declinedStudents.map((st) => (
+                      {declinedStudents.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {declinedStudents.map((st) => (
                           <div
                             key={st.studentId}
                             className="bg-slate-50/80 dark:bg-slate-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2 text-xs"
@@ -821,12 +831,17 @@ export default function SmartGradeAnalyticsModal({
                               </span>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="py-4 text-center text-xs text-slate-500 dark:text-slate-400">
+                          {comparableStudentCount === 0
+                            ? "Enter both Midterm and Final grades to compare student progress."
+                            : "No students declined by 3.00 or more points."}
+                        </p>
+                      )}
+                  </div>
+              </div>
 
               {/* Semestral Top Performers vs Academic Risk */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
