@@ -397,7 +397,7 @@ export default function GradeMasterTable({
 
                     {/* DR */}
                     <td className="text-center py-1.5 border-r border-slate-200 dark:border-slate-800 font-medium text-slate-700 dark:text-slate-300">
-                      {row.dr !== "" ? Number(row.dr).toFixed(2) : "-"}
+                      {row.dr !== "" ? Number(row.dr).toFixed(0) : "-"}
                     </td>
 
                     {/* DP (5%) */}
@@ -430,7 +430,7 @@ export default function GradeMasterTable({
 
                     {/* AR */}
                     <td className="text-center py-1.5 border-r border-slate-200 dark:border-slate-800 font-medium text-slate-700 dark:text-slate-300">
-                      {row.ar !== "" ? Number(row.ar).toFixed(2) : "-"}
+                      {row.ar !== "" ? Number(row.ar).toFixed(0) : "-"}
                     </td>
 
                     {/* AP (5%) */}

@@ -5,6 +5,13 @@
  */
 export const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
 
+const roundToExcel = (value, decimalPlaces = 0) => {
+  const factor = 10 ** decimalPlaces;
+  const scaledValue = Math.abs(value) * factor;
+  const tolerance = Number.EPSILON * Math.max(1, scaledValue) * 4;
+  return Math.sign(value) * Math.round(scaledValue + tolerance) / factor;
+};
+
 /**
  * Calculate Major Exam Total (MET) from raw scores
  * Formula: =IF(A5 <> "", SUM(B5:D5) - E5, "")
@@ -116,7 +123,7 @@ export const calculateDR = (at, totalDays = 36, remarks = "") => {
   }
 
   const dr = 90 - deduction;
-  return clamp(Number(dr.toFixed(2)), 0, 90);
+  return clamp(roundToExcel(dr, 2), 0, 90);
 };
 
 /**
@@ -133,7 +140,7 @@ export const calculateAR = (at, totalDays = 36, attHigh = 95, attLow = 70, remar
   if (isNaN(present)) return "";
 
   const rawAr = (present / totalDays) * (attHigh - attLow) + attLow;
-  return clamp(Number(rawAr.toFixed(2)), attLow, attHigh);
+  return clamp(roundToExcel(rawAr, 2), attLow, attHigh);
 };
 
 /**
@@ -188,11 +195,11 @@ export const computeStudentGradeRow = (student, scores = {}, config = {}, absenc
   const ar = calculateAR(at, atMax, attHigh, attLow, remarks);
 
   // Percentages (clamped to max weight)
-  const mep = mer !== "" ? clamp(Number((mer * meWeight).toFixed(2)), 0, Number((meHigh * meWeight).toFixed(2))) : "";
-  const qp = qr !== "" ? clamp(Number((qr * quizWeight).toFixed(2)), 0, Number((quizHigh * quizWeight).toFixed(2))) : "";
-  const rp = rr !== "" ? clamp(Number((rr * recWeight).toFixed(2)), 0, Number((recHigh * recWeight).toFixed(2))) : "";
-  const dp = dr !== "" ? clamp(Number((dr * depWeight).toFixed(2)), 0, Number((90 * depWeight).toFixed(2))) : "";
-  const ap = ar !== "" ? clamp(Number((ar * attWeight).toFixed(2)), 0, Number((attHigh * attWeight).toFixed(2))) : "";
+  const mep = mer !== "" ? clamp(roundToExcel(mer * meWeight, 2), 0, roundToExcel(meHigh * meWeight, 2)) : "";
+  const qp = qr !== "" ? clamp(roundToExcel(qr * quizWeight, 2), 0, roundToExcel(quizHigh * quizWeight, 2)) : "";
+  const rp = rr !== "" ? clamp(roundToExcel(rr * recWeight, 2), 0, roundToExcel(recHigh * recWeight, 2)) : "";
+  const dp = dr !== "" ? clamp(roundToExcel(dr * depWeight, 2), 0, roundToExcel(90 * depWeight, 2)) : "";
+  const ap = ar !== "" ? clamp(roundToExcel(ar * attWeight, 2), 0, roundToExcel(attHigh * attWeight, 2)) : "";
 
   // CS 60% = QP + RP + DP + AP
   // Formula: =IF(B7 <> "", H7 + K7 + M7 + P7, "")
@@ -202,7 +209,7 @@ export const computeStudentGradeRow = (student, scores = {}, config = {}, absenc
                   (rp !== "" ? Number(rp) : 0) +
                   (dp !== "" ? Number(dp) : 0) +
                   (ap !== "" ? Number(ap) : 0);
-    cs = clamp(Number(csVal.toFixed(2)), 0, 60.00);
+    cs = clamp(roundToExcel(csVal, 2), 0, 60.00);
   }
 
   // Final Grade = MEP + CS
@@ -212,7 +219,7 @@ export const computeStudentGradeRow = (student, scores = {}, config = {}, absenc
     finalGrade = remarks;
   } else if (mep !== "" || cs !== "") {
     const totalVal = (mep !== "" ? Number(mep) : 0) + (cs !== "" ? Number(cs) : 0);
-    finalGrade = clamp(Number(totalVal.toFixed(2)), 0, 100.00);
+    finalGrade = clamp(roundToExcel(totalVal, 2), 0, 100.00);
   }
 
   return {
@@ -322,7 +329,7 @@ export const calculateSemestralGrade = (midterm, finals) => {
   const f = Number(finals);
   const rawSum = (m * 0.5) + (f * 0.5);
   // Match exact MS Excel =ROUND((MIDTERM * 0.5) + (FINAL * 0.5), 2)
-  return Math.round((rawSum + Number.EPSILON * 1000) * 100) / 100;
+  return roundToExcel(rawSum, 2);
 };
 
 /**
