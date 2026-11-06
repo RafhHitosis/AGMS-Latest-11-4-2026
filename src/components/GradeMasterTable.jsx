@@ -1,6 +1,8 @@
 import React from "react";
 import { Download, RefreshCw, Edit3 } from "lucide-react";
 import clsx from "clsx";
+import ReadModeToggle from "./ReadModeToggle";
+import useReadModeCellSelection from "../hooks/useReadModeCellSelection";
 
 export default function GradeMasterTable({
   computedRows = [],
@@ -12,6 +14,8 @@ export default function GradeMasterTable({
   onSyncAttendance,
   activeFilter = "ALL",
   onClearFilter,
+  readMode = false,
+  onToggleReadMode,
 }) {
   const peMax = Number(config?.pe_max) || 0;
   const meMax = Number(config?.me_max) || 50;
@@ -28,9 +32,15 @@ export default function GradeMasterTable({
   const rW = ((Number(weights.rec) || 0.25) * 100).toFixed(0);
   const dW = ((Number(weights.dep) || 0.05) * 100).toFixed(0);
   const aW = ((Number(weights.att) || 0.05) * 100).toFixed(0);
+  const { containerRef, handleCellClick, handleCellKeyDown } = useReadModeCellSelection(readMode);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900">
+    <div
+      ref={containerRef}
+      onClickCapture={handleCellClick}
+      onKeyDownCapture={handleCellKeyDown}
+      className={clsx("grade-sheet-table flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900", readMode && "grade-read-mode")}
+    >
       {/* Top ribbon */}
       <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
         <div className="flex items-center gap-2">
@@ -54,11 +64,13 @@ export default function GradeMasterTable({
         </div>
 
         <div className="flex items-center gap-3">
+          <ReadModeToggle enabled={readMode} onToggle={onToggleReadMode} />
           {onSyncAttendance && (
             <button
               onClick={onSyncAttendance}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-300 dark:border-slate-700 font-semibold text-xs cursor-pointer shadow-2xs transition-colors"
-              title="Copy present days from daily attendance logs into AT for this section"
+              disabled={readMode}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-300 dark:border-slate-700 font-semibold text-xs cursor-pointer shadow-2xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={readMode ? "Turn off read mode to sync attendance" : "Copy present days from daily attendance logs into AT for this section"}
             >
               <RefreshCw className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
               Sync Attendance
@@ -210,8 +222,9 @@ export default function GradeMasterTable({
                 <input
                   type="text"
                   inputMode="decimal"
+                  readOnly={readMode}
                   value={rtMax}
-                  onFocus={(e) => e.target.select()}
+                  onFocus={(e) => !readMode && e.target.select()}
                   onChange={(e) => {
                     const v = e.target.value;
                     if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
@@ -234,8 +247,9 @@ export default function GradeMasterTable({
                 <input
                   type="text"
                   inputMode="decimal"
+                  readOnly={readMode}
                   value={atMax}
-                  onFocus={(e) => e.target.select()}
+                  onFocus={(e) => !readMode && e.target.select()}
                   onChange={(e) => {
                     const v = e.target.value;
                     if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
@@ -281,7 +295,7 @@ export default function GradeMasterTable({
                 return (
                   <tr
                     key={row.studentId}
-                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/60 transition-colors font-mono"
+                    className="transition-colors font-mono"
                   >
                     {/* NO */}
                     <td className="text-center py-1.5 px-1 border-r border-slate-200 dark:border-slate-800 font-sans font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-850/50">
@@ -354,9 +368,10 @@ export default function GradeMasterTable({
                         <input
                           type="text"
                           inputMode="decimal"
+                          readOnly={readMode}
                           className="w-full h-8 text-center text-xs font-semibold focus:bg-emerald-50 dark:focus:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none"
                           value={s.rt !== undefined && s.rt !== null ? s.rt : ""}
-                          onFocus={(e) => e.target.select()}
+                          onFocus={(e) => !readMode && e.target.select()}
                           onChange={(e) => {
                             const v = e.target.value;
                             if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
@@ -396,9 +411,10 @@ export default function GradeMasterTable({
                         <input
                           type="text"
                           inputMode="decimal"
+                          readOnly={readMode}
                           className="w-full h-8 text-center text-xs font-semibold focus:bg-rose-50 dark:focus:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none"
                           value={s.at !== undefined && s.at !== null ? s.at : ""}
-                          onFocus={(e) => e.target.select()}
+                          onFocus={(e) => !readMode && e.target.select()}
                           onChange={(e) => {
                             const v = e.target.value;
                             if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {

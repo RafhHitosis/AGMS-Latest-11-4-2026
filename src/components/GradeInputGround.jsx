@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import ConfirmModal from "./ConfirmModal";
+import ReadModeToggle from "./ReadModeToggle";
+import useReadModeCellSelection from "../hooks/useReadModeCellSelection";
 
 export default function GradeInputGround({
   students = [],
@@ -19,6 +21,8 @@ export default function GradeInputGround({
   onRemoveQuizItem,
   activeFilter = "ALL",
   onClearFilter,
+  readMode = false,
+  onToggleReadMode,
 }) {
   const [newQuizName, setNewQuizName] = useState("");
   const [newQuizMax, setNewQuizMax] = useState("50");
@@ -34,6 +38,7 @@ export default function GradeInputGround({
   const quizItems = config?.quiz_items || [];
   const sumQuiz = quizItems.reduce((acc, it) => acc + (Number(it.max) || 0), 0);
   const totalQuizMax = sumQuiz > 0 ? sumQuiz : 225;
+  const { containerRef, handleCellClick, handleCellKeyDown } = useReadModeCellSelection(readMode);
 
   const handleAddQuiz = (e) => {
     e.preventDefault();
@@ -45,7 +50,12 @@ export default function GradeInputGround({
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900">
+    <div
+      ref={containerRef}
+      onClickCapture={handleCellClick}
+      onKeyDownCapture={handleCellKeyDown}
+      className={clsx("grade-sheet-table flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900", readMode && "grade-read-mode")}
+    >
       {/* Top action bar */}
       <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex items-center justify-between text-xs">
         <div className="flex items-center gap-2">
@@ -68,9 +78,12 @@ export default function GradeInputGround({
           )}
         </div>
         <div className="flex items-center gap-2">
+          <ReadModeToggle enabled={readMode} onToggle={onToggleReadMode} />
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer text-xs"
+            disabled={readMode}
+            title={readMode ? "Turn off read mode to add a column" : "Add a quiz or lab column"}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer text-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-3.5 h-3.5" />
             Add Quiz/Lab Column
@@ -79,7 +92,7 @@ export default function GradeInputGround({
       </div>
 
       {/* Add Quiz Modal */}
-      {showAddModal && (
+      {showAddModal && !readMode && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-sm p-5 border border-slate-200 dark:border-slate-800">
             <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base mb-3">Add Quiz or Activity Column</h3>
@@ -88,6 +101,7 @@ export default function GradeInputGround({
                 <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1 block">Column Title</label>
                 <input
                   type="text"
+                  readOnly={readMode}
                   placeholder="e.g. HQ3 or LA3"
                   className="w-full border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
                   value={newQuizName}
@@ -101,6 +115,7 @@ export default function GradeInputGround({
                 <input
                   type="text"
                   inputMode="decimal"
+                  readOnly={readMode}
                   placeholder="50"
                   className="w-full border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
                   value={newQuizMax}
@@ -135,7 +150,7 @@ export default function GradeInputGround({
       )}
 
       <ConfirmModal
-        isOpen={Boolean(quizToDelete)}
+        isOpen={Boolean(quizToDelete) && !readMode}
         title="Delete quiz/activity column?"
         message={`Delete "${quizToDelete?.name || "this column"}" from the grade sheet? Its scores will no longer be shown in the quiz/activity total.`}
         onConfirm={() => {
@@ -198,7 +213,8 @@ export default function GradeInputGround({
                       <button
                         type="button"
                         onClick={() => setQuizToDelete(q)}
-                        className="opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity cursor-pointer"
+                        disabled={readMode}
+                        className="opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity cursor-pointer disabled:pointer-events-none"
                         title={`Delete ${q.name || "quiz/activity"} column`}
                         aria-label={`Delete ${q.name || "quiz/activity"} column`}
                       >
@@ -223,8 +239,9 @@ export default function GradeInputGround({
                 <input
                   type="text"
                   inputMode="decimal"
+                  readOnly={readMode}
                   value={config?.pe_max !== undefined && config?.pe_max !== null ? config.pe_max : 0}
-                  onFocus={(e) => e.target.select()}
+                  onFocus={(e) => !readMode && e.target.select()}
                   onChange={(e) => {
                     const v = e.target.value;
                     if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
@@ -242,8 +259,9 @@ export default function GradeInputGround({
                 <input
                   type="text"
                   inputMode="decimal"
+                  readOnly={readMode}
                   value={config?.me_max !== undefined && config?.me_max !== null ? config.me_max : 50}
-                  onFocus={(e) => e.target.select()}
+                  onFocus={(e) => !readMode && e.target.select()}
                   onChange={(e) => {
                     const v = e.target.value;
                     if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
@@ -273,8 +291,9 @@ export default function GradeInputGround({
                   <input
                     type="text"
                     inputMode="decimal"
+                    readOnly={readMode}
                     value={q.max !== undefined && q.max !== null ? q.max : ""}
-                    onFocus={(e) => e.target.select()}
+                    onFocus={(e) => !readMode && e.target.select()}
                     onChange={(e) => {
                       const v = e.target.value;
                       if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
@@ -306,7 +325,7 @@ export default function GradeInputGround({
                 const s = grades[row.studentId] || {};
 
                 return (
-                  <tr key={row.studentId} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+                  <tr key={row.studentId} className="transition-colors">
                     {/* NO */}
                     <td className="text-center py-1 px-1 border-r border-slate-200 dark:border-slate-800 font-sans font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-850/50">
                       {idx + 1}
@@ -342,9 +361,10 @@ export default function GradeInputGround({
                       <input
                         type="text"
                         inputMode="decimal"
+                        readOnly={readMode}
                         className="w-full h-8 text-center text-xs text-slate-900 dark:text-slate-100 focus:bg-yellow-50 dark:focus:bg-slate-800 focus:outline-none"
                         value={s.pe !== undefined && s.pe !== null ? s.pe : ""}
-                        onFocus={(e) => e.target.select()}
+                        onFocus={(e) => !readMode && e.target.select()}
                         onChange={(e) => {
                           const v = e.target.value;
                           if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
@@ -360,9 +380,10 @@ export default function GradeInputGround({
                       <input
                         type="text"
                         inputMode="decimal"
+                        readOnly={readMode}
                         className="w-full h-8 text-center text-xs font-semibold text-slate-900 dark:text-slate-100 focus:bg-yellow-50 dark:focus:bg-slate-800 focus:outline-none"
                         value={s.me !== undefined && s.me !== null ? s.me : ""}
-                        onFocus={(e) => e.target.select()}
+                        onFocus={(e) => !readMode && e.target.select()}
                         onChange={(e) => {
                           const v = e.target.value;
                           if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
@@ -378,9 +399,10 @@ export default function GradeInputGround({
                       <input
                         type="text"
                         inputMode="decimal"
+                        readOnly={readMode}
                         className="w-full h-8 text-center text-xs text-emerald-600 dark:text-emerald-400 focus:bg-yellow-50 dark:focus:bg-slate-800 focus:outline-none"
                         value={s.plus !== undefined && s.plus !== null ? s.plus : ""}
-                        onFocus={(e) => e.target.select()}
+                        onFocus={(e) => !readMode && e.target.select()}
                         onChange={(e) => {
                           const v = e.target.value;
                           if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
@@ -396,9 +418,10 @@ export default function GradeInputGround({
                       <input
                         type="text"
                         inputMode="decimal"
+                        readOnly={readMode}
                         className="w-full h-8 text-center text-xs text-red-600 dark:text-red-400 focus:bg-yellow-50 dark:focus:bg-slate-800 focus:outline-none"
                         value={s.minus !== undefined && s.minus !== null ? s.minus : ""}
-                        onFocus={(e) => e.target.select()}
+                        onFocus={(e) => !readMode && e.target.select()}
                         onChange={(e) => {
                           const v = e.target.value;
                           if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
@@ -422,9 +445,10 @@ export default function GradeInputGround({
                           <input
                             type="text"
                             inputMode="decimal"
+                            readOnly={readMode}
                             className="w-full h-8 text-center text-xs text-slate-900 dark:text-slate-100 focus:bg-emerald-50 dark:focus:bg-slate-800 focus:outline-none"
                             value={val !== undefined && val !== null ? val : ""}
-                            onFocus={(e) => e.target.select()}
+                            onFocus={(e) => !readMode && e.target.select()}
                             onChange={(e) => {
                               const v = e.target.value;
                               if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {

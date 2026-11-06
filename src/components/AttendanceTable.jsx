@@ -259,6 +259,10 @@ export default function AttendanceTable({
 
         {/* Right Sidebar: Meaningful Color Legend */}
         <div className="flex items-center gap-4 shrink-0 ml-4 font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 px-3.5 py-1 rounded-full border border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-1.5" title="Today's date">
+            <div className="w-3 h-3 rounded-[3px] bg-emerald-600 border border-emerald-700"></div>
+            <span>Today</span>
+          </div>
           <div className="flex items-center gap-1.5" title="Unmarked cells are automatically counted as Present">
             <div className="w-3 h-3 rounded-[3px] border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"></div>
             <span>Present</span>

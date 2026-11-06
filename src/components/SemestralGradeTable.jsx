@@ -2,13 +2,18 @@ import React, { useState } from "react";
 import { Award } from "lucide-react";
 import clsx from "clsx";
 import EquivalenceScaleModal from "./EquivalenceScaleModal";
+import ReadModeToggle from "./ReadModeToggle";
+import useReadModeCellSelection from "../hooks/useReadModeCellSelection";
 
 export default function SemestralGradeTable({
   semestralRows = [],
   activeFilter = "ALL",
   onClearFilter,
+  readMode = false,
+  onToggleReadMode,
 }) {
   const [showEquivModal, setShowEquivModal] = useState(false);
+  const { containerRef, handleCellClick, handleCellKeyDown } = useReadModeCellSelection(readMode);
 
   const passedCount = semestralRows.filter(
     (r) => typeof r.semGrade === "number" && r.semGrade >= 75.0 && r.equivGrade !== "5.00"
@@ -24,7 +29,12 @@ export default function SemestralGradeTable({
   ).length;
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900">
+    <div
+      ref={containerRef}
+      onClickCapture={handleCellClick}
+      onKeyDownCapture={handleCellKeyDown}
+      className={clsx("grade-sheet-table flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900", readMode && "grade-read-mode")}
+    >
       {/* Equivalence Modal */}
       <EquivalenceScaleModal
         isOpen={showEquivModal}
@@ -58,6 +68,7 @@ export default function SemestralGradeTable({
         </div>
 
         <div className="flex items-center gap-3">
+          <ReadModeToggle enabled={readMode} onToggle={onToggleReadMode} />
           <button
             onClick={() => setShowEquivModal(true)}
             className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-300 dark:border-slate-700 font-semibold text-xs cursor-pointer shadow-2xs transition-colors"
@@ -179,7 +190,7 @@ export default function SemestralGradeTable({
                 return (
                   <tr
                     key={row.studentId}
-                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/60 transition-colors"
+                    className="transition-colors"
                   >
                     {/* # Index */}
                     <td className="text-center py-2 px-1 border-r border-slate-200 dark:border-slate-800 font-sans font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-850/50 text-xs">

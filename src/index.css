@@ -131,6 +131,64 @@
   background-color: #475569;
 }
 
+.grade-read-mode input[readonly] {
+  pointer-events: none;
+}
+
+.grade-read-mode td {
+  cursor: cell;
+}
+
+.grade-read-mode td.grade-read-row-selected {
+  background-color: #e2e8f0 !important;
+}
+
+.grade-read-mode td.grade-read-column-selected {
+  background-color: #cbd5e1 !important;
+}
+
+.grade-read-mode td.grade-read-cell-active {
+  position: relative;
+  z-index: 1;
+  background-color: #dcfce7 !important;
+  outline: 2px solid #16a34a;
+  outline-offset: -2px;
+}
+
+.dark .grade-read-mode td.grade-read-row-selected {
+  background-color: #334155 !important;
+}
+
+.dark .grade-read-mode td.grade-read-column-selected {
+  background-color: #475569 !important;
+}
+
+.dark .grade-read-mode td.grade-read-cell-active {
+  background-color: #14532d !important;
+  outline-color: #4ade80;
+}
+
+.grade-read-mode td:focus {
+  outline: none;
+}
+
+.grade-read-mode td.grade-read-cell-active:focus {
+  outline: 2px solid #16a34a;
+  outline-offset: -2px;
+}
+
+.dark .grade-read-mode td.grade-read-cell-active:focus {
+  outline-color: #4ade80;
+}
+
+.grade-sheet-table:not(.grade-read-mode) tbody tr:hover > td {
+  background-color: #dbeafe !important;
+}
+
+.dark .grade-sheet-table:not(.grade-read-mode) tbody tr:hover > td {
+  background-color: #1e3a8a !important;
+}
+
 @keyframes app-toast-enter {
   from {
     opacity: 0;

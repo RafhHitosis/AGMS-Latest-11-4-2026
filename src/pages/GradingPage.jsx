@@ -41,6 +41,7 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, o
   const appConfig = propAppConfig || hookAppConfig;
   const [term, setTerm] = useState("midterm");
   const [activeSheet, setActiveSheet] = useState("master"); // 'master' | 'input' | 'semestral'
+  const [isReadMode, setIsReadMode] = useState(false);
 
   const {
     students,
@@ -234,9 +235,11 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, o
                     Grading
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate max-w-[140px] sm:max-w-xs">
-                  {appConfig?.title || "Grading System"}
-                </p>
+                {appConfig?.title && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate max-w-[140px] sm:max-w-xs">
+                    {appConfig.title}
+                  </p>
+                )}
               </div>
 
               {/* Solo Switch to Attendance Button */}
@@ -445,6 +448,8 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, o
               onSyncAttendance={syncAttendanceFromTracker}
               activeFilter={activeFilter}
               onClearFilter={() => setActiveFilter("ALL")}
+              readMode={isReadMode}
+              onToggleReadMode={() => setIsReadMode((enabled) => !enabled)}
             />
           ) : activeSheet === "input" ? (
             <GradeInputGround
@@ -463,12 +468,16 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, o
               onRemoveQuizItem={removeQuizItem}
               activeFilter={activeFilter}
               onClearFilter={() => setActiveFilter("ALL")}
+              readMode={isReadMode}
+              onToggleReadMode={() => setIsReadMode((enabled) => !enabled)}
             />
           ) : (
             <SemestralGradeTable
               semestralRows={filteredSemestralRows}
               activeFilter={activeFilter}
               onClearFilter={() => setActiveFilter("ALL")}
+              readMode={isReadMode}
+              onToggleReadMode={() => setIsReadMode((enabled) => !enabled)}
             />
           )}
         </div>

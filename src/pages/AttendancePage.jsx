@@ -259,9 +259,11 @@ export default function AttendancePage({ sectionId, onBack, onSwitchToGrading, o
                   Attendance
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate max-w-[140px] sm:max-w-xs">
-                {appConfig?.title || "Academic Records"}
-              </p>
+              {appConfig?.title && (
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate max-w-[140px] sm:max-w-xs">
+                  {appConfig.title}
+                </p>
+              )}
             </div>
 
             {/* Solo Switch to Grades Button */}
