@@ -7,9 +7,11 @@ import {
   deleteStudent,
   deleteAllStudentsBySection,
 } from "../controllers/studentController.js";
+import { requireSectionAccess } from "../middleware/requireAuth.js";
 
 const router = Router();
 
+router.use("/:sectionId", requireSectionAccess);
 router.get("/:sectionId/students", getStudentsBySection);
 router.post("/:sectionId/students", addStudent);
 router.post("/:sectionId/students/batch", batchAddStudents);

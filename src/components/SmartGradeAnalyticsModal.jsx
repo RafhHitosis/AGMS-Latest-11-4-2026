@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   X,
@@ -33,7 +33,7 @@ function AdaptiveInfoTooltip({
   const triggerRef = useRef(null);
   const timeoutRef = useRef(null);
 
-  const calculatePosition = () => {
+  const calculatePosition = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const viewportWidth = window.innerWidth;
@@ -76,7 +76,7 @@ function AdaptiveInfoTooltip({
       placeAbove,
       arrowLeft,
     });
-  };
+  }, [placement]);
 
   const handleOpen = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -103,7 +103,7 @@ function AdaptiveInfoTooltip({
       window.removeEventListener("resize", handleScrollOrResize);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [isOpen]);
+  }, [isOpen, calculatePosition]);
 
   return (
     <div
@@ -198,7 +198,6 @@ function BenchmarkCard({
   infoTitle,
   explanation,
   dataNote,
-  position = "col-1",
   color = "slate",
 }) {
   return (
@@ -313,6 +312,9 @@ export default function SmartGradeAnalyticsModal({
       r.smartJudgement?.category === "FAILED" ||
       r.smartJudgement?.category === "NEEDS_IMPROVEMENT"
   );
+  const semPendingStudents = (sData.enrichedRows || []).filter(
+    (r) => r.smartJudgement?.category === "PENDING"
+  );
 
   // Students who improved in Finals compared to Midterm
   const improvedStudents = (sData.enrichedRows || [])
@@ -406,7 +408,6 @@ export default function SmartGradeAnalyticsModal({
                   subtitle={tData.highestStudents?.[0]?.name || "—"}
                   subtitleTitle={tData.highestStudents?.[0]?.name || "None"}
                   color="emerald"
-                  position="col-1"
                   infoTitle="Highest Term Grade"
                   explanation="Shows the student with the highest total grade recorded in this section for this term."
                   dataNote="Based on all entered grades for this term. If students tie for first place, the top student is shown."
@@ -418,7 +419,6 @@ export default function SmartGradeAnalyticsModal({
                   subtitle={tData.hasDistinctLowest ? tData.lowestStudents?.[0]?.name : "—"}
                   subtitleTitle={tData.hasDistinctLowest ? tData.lowestStudents?.[0]?.name : "No lower grade"}
                   color="slate"
-                  position="col-2"
                   infoTitle="Lowest Term Grade"
                   explanation="Shows the student with the lowest total grade in this section for this term."
                   dataNote="Only shows a name if there are at least two students with different grades. Stays blank if only one student exists or grades are tied."
@@ -429,7 +429,6 @@ export default function SmartGradeAnalyticsModal({
                   value={tData.average ? tData.average.toFixed(2) : "—"}
                   subtitle={`Median: ${tData.median ? tData.median.toFixed(2) : "—"}`}
                   color="slate"
-                  position="col-3"
                   infoTitle="Term Class Average"
                   explanation="The general class average grade across all graded students in this term."
                   dataNote="Calculated by adding all student term grades divided by total graded students. Also shows the median (middle score)."
@@ -445,7 +444,6 @@ export default function SmartGradeAnalyticsModal({
                   valueColor="text-blue-700 dark:text-blue-400"
                   subtitle={`${tData.gradedStudents - (tData.counts?.failed || 0)} Passed • ${tData.counts?.failed || 0} Failed`}
                   color="slate"
-                  position="col-4"
                   infoTitle="Term Passing Rate"
                   explanation="The percentage of students who scored 75.00 or higher in this term."
                   dataNote="Shows the overall pass percentage and the exact breakdown of passing vs failing students."
@@ -697,7 +695,6 @@ export default function SmartGradeAnalyticsModal({
                   subtitle={sData.highestStudents?.[0]?.name || "—"}
                   subtitleTitle={sData.highestStudents?.[0]?.name || "None"}
                   color="emerald"
-                  position="col-1"
                   infoTitle="Highest Semestral Grade"
                   explanation="Shows the student with the highest semestral score in this section for the whole semester."
                   dataNote="Calculated from 50% Midterm + 50% Finals. If students tie for first place, the top student is shown."
@@ -709,7 +706,6 @@ export default function SmartGradeAnalyticsModal({
                   subtitle={sData.hasDistinctLowest ? sData.lowestStudents?.[0]?.name : "—"}
                   subtitleTitle={sData.hasDistinctLowest ? sData.lowestStudents?.[0]?.name : "No lower grade"}
                   color="slate"
-                  position="col-2"
                   infoTitle="Lowest Semestral Grade"
                   explanation="Shows the student with the lowest semestral grade in this section."
                   dataNote="Only shows a name if there are at least two students with different grades. Stays blank if grades are equal or only one student exists."
@@ -726,7 +722,6 @@ export default function SmartGradeAnalyticsModal({
                   subtitle={sData.mostImproved ? sData.mostImproved.name : "—"}
                   subtitleTitle={sData.mostImproved ? sData.mostImproved.name : "None"}
                   color="slate"
-                  position="col-3"
                   infoTitle="Most Improved Student"
                   explanation="Shows the student whose score increased the most between Midterm and Finals."
                   dataNote="Calculated as (Finals Grade − Midterm Grade). For example, +5.00 means their grade increased by 5 points in Finals."
@@ -737,7 +732,6 @@ export default function SmartGradeAnalyticsModal({
                   value={sData.average ? sData.average.toFixed(2) : "—"}
                   subtitle={`Median: ${sData.median ? sData.median.toFixed(2) : "—"}`}
                   color="slate"
-                  position="col-4"
                   infoTitle="Semestral Class Average"
                   explanation="The overall average semestral grade of all students in this section for the full semester."
                   dataNote="Calculated across all student semestral grades. Also shows the median (the middle score of the class)."
@@ -920,9 +914,27 @@ export default function SmartGradeAnalyticsModal({
 
                   <div className="divide-y divide-slate-100 dark:divide-slate-800 mt-1 max-h-[260px] overflow-y-auto">
                     {semAtRisk.length === 0 ? (
-                      <div className="py-6 text-center text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center justify-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>All students have passing semestral marks</span>
+                      <div
+                        className={clsx(
+                          "py-6 text-center text-xs font-semibold flex items-center justify-center gap-1.5",
+                          semPendingStudents.length > 0
+                            ? "text-amber-700 dark:text-amber-300"
+                            : "text-emerald-700 dark:text-emerald-400"
+                        )}
+                      >
+                        {semPendingStudents.length > 0 ? (
+                          <>
+                            <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                            <span>
+                              {semPendingStudents.length} student{semPendingStudents.length === 1 ? " still has" : "s still have"} incomplete Midterm/Final grades; semestral risk requires both terms.
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span>No failing or borderline semestral grades</span>
+                          </>
+                        )}
                       </div>
                     ) : (
                       semAtRisk.map((st) => (

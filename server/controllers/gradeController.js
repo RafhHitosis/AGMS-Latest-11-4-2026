@@ -1,75 +1,35 @@
-import { query, pool } from "../config/db.js";
-
-const DEFAULT_GRADE_CONFIG = {
-  pe_max: 0,
-  me_max: 50,
-  plus_max: 0,
-  minus_max: 0,
-  quiz_items: [
-    { id: "HQ1", name: "HQ1", max: 100 },
-    { id: "HQ2", name: "HQ2", max: 25 },
-    { id: "LA1", name: "LA1", max: 50 },
-    { id: "LA2", name: "LA2", max: 50 },
-  ],
-  rt_max: 50,
-  at_max: 36,
-  transmutation: {
-    me_high: 100,
-    me_low: 50,
-    quiz_high: 100,
-    quiz_low: 50,
-    rec_high: 95,
-    rec_low: 70,
-    att_high: 95,
-    att_low: 70,
-  },
-  weights: {
-    me: 0.40,
-    quiz: 0.25,
-    rec: 0.25,
-    dep: 0.05,
-    att: 0.05,
-  },
-};
+import { query } from "../config/db.js";
+import { isValidGradeTerm, validateGradeConfiguration, validateGradeScores } from "../../shared/gradeValidation.js";
+import { DEFAULT_GRADE_CONFIG } from "../../shared/defaultGradeConfig.js";
 
 export const getGradeData = async (req, res, next) => {
   try {
     const { sectionId } = req.params;
-    const term = req.query.term || "midterm";
+    const term = req.query.term ?? "midterm";
+    if (!isValidGradeTerm(term)) {
+      return res.status(400).json({ error: "Term must be midterm, finals, or semestral." });
+    }
 
-    // 1. Get students for this section
-    const studentsRes = await query(
-      "SELECT id, section_id, name FROM students WHERE section_id = $1 ORDER BY name ASC",
-      [sectionId]
-    );
-
-    // 2. Get saved grade config (or defaults)
-    const configRes = await query(
-      "SELECT config FROM grade_configs WHERE section_id = $1 AND term = $2",
-      [sectionId, term]
-    );
+    const [studentsRes, configRes, gradesRes] = await Promise.all([
+      query(
+        "SELECT id, section_id, name FROM students WHERE workspace_id = $1 AND section_id = $2 ORDER BY name ASC",
+        [req.user.id, sectionId]
+      ),
+      query(
+        "SELECT config FROM grade_configs WHERE workspace_id = $1 AND section_id = $2 AND term = $3",
+        [req.user.id, sectionId, term]
+      ),
+      query(
+        "SELECT student_id, scores FROM grades WHERE workspace_id = $1 AND section_id = $2 AND term = $3",
+        [req.user.id, sectionId, term]
+      ),
+    ]);
 
     const config = configRes.rows.length > 0 ? configRes.rows[0].config : DEFAULT_GRADE_CONFIG;
-
-    // 3. Get saved student grade scores
-    const gradesRes = await query(
-      "SELECT student_id, scores FROM grades WHERE section_id = $1 AND term = $2",
-      [sectionId, term]
-    );
 
     const gradesMap = {};
     for (const row of gradesRes.rows) {
       gradesMap[row.student_id] = row.scores;
-    }
-
-    // 4. Get attendance summary (count of absences to derive present sessions)
-    const attendanceRes = await query(
-      "SELECT student_id, COUNT(*) as absences_count FROM attendance WHERE section_id = $1 GROUP BY student_id",
-      [sectionId]
-    );
-    const absencesMap = {};
-    for (const row of attendanceRes.rows) {
-      absencesMap[row.student_id] = parseInt(row.absences_count, 10);
     }
 
     res.json({
@@ -78,7 +38,6 @@ export const getGradeData = async (req, res, next) => {
       students: studentsRes.rows,
       config,
       grades: gradesMap,
-      absences: absencesMap,
     });
   } catch (err) {
     next(err);
@@ -88,19 +47,23 @@ export const getGradeData = async (req, res, next) => {
 export const saveGradeConfig = async (req, res, next) => {
   try {
     const { sectionId } = req.params;
-    const { term = "midterm", config } = req.body;
+    const { term = "midterm", config } = req.body || {};
 
-    if (!config) {
-      return res.status(400).json({ error: "Config object is required" });
+    if (!isValidGradeTerm(term)) {
+      return res.status(400).json({ error: "Term must be midterm, finals, or semestral." });
+    }
+    const validationError = validateGradeConfiguration(config);
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
     }
 
     const result = await query(
-      `INSERT INTO grade_configs (section_id, term, config, updated_at)
-       VALUES ($1, $2, $3::jsonb, NOW())
-       ON CONFLICT (section_id, term)
-       DO UPDATE SET config = $3::jsonb, updated_at = NOW()
+      `INSERT INTO grade_configs (workspace_id, section_id, term, config, updated_at)
+       VALUES ($1, $2, $3, $4::jsonb, NOW())
+       ON CONFLICT (workspace_id, section_id, term)
+       DO UPDATE SET config = $4::jsonb, updated_at = NOW()
        RETURNING config`,
-      [sectionId, term, JSON.stringify(config)]
+      [req.user.id, sectionId, term, JSON.stringify(config)]
     );
 
     res.json({ success: true, config: result.rows[0].config });
@@ -112,20 +75,32 @@ export const saveGradeConfig = async (req, res, next) => {
 export const updateStudentScore = async (req, res, next) => {
   try {
     const { sectionId } = req.params;
-    const { term = "midterm", studentId, scores } = req.body;
+    const { term = "midterm", studentId, scores } = req.body || {};
 
-    if (!studentId || !scores) {
-      return res.status(400).json({ error: "studentId and scores are required" });
+    if (!isValidGradeTerm(term)) {
+      return res.status(400).json({ error: "Term must be midterm, finals, or semestral." });
+    }
+    if (typeof studentId !== "string" || studentId.length === 0 || studentId.length > 50) {
+      return res.status(400).json({ error: "A valid studentId is required." });
+    }
+    const validationError = validateGradeScores(scores);
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
     }
 
     const result = await query(
-      `INSERT INTO grades (section_id, term, student_id, scores, updated_at)
-       VALUES ($1, $2, $3, $4::jsonb, NOW())
-       ON CONFLICT (section_id, term, student_id)
-       DO UPDATE SET scores = COALESCE(grades.scores, '{}'::jsonb) || $4::jsonb, updated_at = NOW()
+      `INSERT INTO grades (workspace_id, section_id, term, student_id, scores, updated_at)
+       SELECT students.workspace_id, students.section_id, $3, students.id, $5::jsonb, NOW()
+       FROM students
+       WHERE students.workspace_id = $1 AND students.section_id = $2 AND students.id = $4
+       ON CONFLICT (workspace_id, section_id, term, student_id)
+       DO UPDATE SET scores = COALESCE(grades.scores, '{}'::jsonb) || $5::jsonb, updated_at = NOW()
        RETURNING student_id, scores`,
-      [sectionId, term, studentId, JSON.stringify(scores)]
+      [req.user.id, sectionId, term, studentId, JSON.stringify(scores)]
     );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Student not found in this section." });
+    }
 
     res.json({ success: true, grade: result.rows[0] });
   } catch (err) {
@@ -134,34 +109,52 @@ export const updateStudentScore = async (req, res, next) => {
 };
 
 export const batchUpdateScores = async (req, res, next) => {
-  const client = await pool.connect();
   try {
     const { sectionId } = req.params;
-    const { term = "midterm", grades } = req.body; // grades: { [studentId]: scores }
+    const { term = "midterm", grades } = req.body || {}; // grades: { [studentId]: scores }
 
-    if (!grades || typeof grades !== "object") {
-      return res.status(400).json({ error: "grades object is required" });
+    if (!isValidGradeTerm(term)) {
+      return res.status(400).json({ error: "Term must be midterm, finals, or semestral." });
+    }
+    if (grades === null || typeof grades !== "object" || Array.isArray(grades)) {
+      return res.status(400).json({ error: "Grades must be an object keyed by student ID." });
     }
 
-    await client.query("BEGIN");
-
-    for (const [studentId, scores] of Object.entries(grades)) {
-      await client.query(
-        `INSERT INTO grades (section_id, term, student_id, scores, updated_at)
-         VALUES ($1, $2, $3, $4::jsonb, NOW())
-         ON CONFLICT (section_id, term, student_id)
-         DO UPDATE SET scores = COALESCE(grades.scores, '{}'::jsonb) || $4::jsonb, updated_at = NOW()`,
-        [sectionId, term, studentId, JSON.stringify(scores || {})]
-      );
+    const entries = Object.entries(grades);
+    if (entries.length === 0) {
+      return res.status(400).json({ error: "At least one student score update is required." });
+    }
+    for (const [studentId, scores] of entries) {
+      if (studentId.length === 0 || studentId.length > 50) {
+        return res.status(400).json({ error: "A valid studentId is required for every score update." });
+      }
+      const validationError = validateGradeScores(scores);
+      if (validationError) {
+        return res.status(400).json({ error: validationError });
+      }
     }
 
-    await client.query("COMMIT");
-    res.json({ success: true, count: Object.keys(grades).length });
+    const studentIds = entries.map(([studentId]) => studentId);
+    const sectionStudents = await query(
+      "SELECT id FROM students WHERE workspace_id = $1 AND section_id = $2 AND id = ANY($3::varchar[])",
+      [req.user.id, sectionId, studentIds]
+    );
+    if (sectionStudents.rows.length !== studentIds.length) {
+      return res.status(404).json({ error: "One or more students were not found in this section." });
+    }
+
+    const result = await query(
+      `INSERT INTO grades (workspace_id, section_id, term, student_id, scores, updated_at)
+       SELECT $1, $2, $3, batch.student_id, batch.scores, NOW()
+       FROM jsonb_each($4::jsonb) AS batch(student_id, scores)
+       ON CONFLICT (workspace_id, section_id, term, student_id)
+       DO UPDATE SET scores = COALESCE(grades.scores, '{}'::jsonb) || EXCLUDED.scores, updated_at = NOW()
+       RETURNING student_id`,
+      [req.user.id, sectionId, term, JSON.stringify(grades)]
+    );
+    res.json({ success: true, count: result.rows.length });
   } catch (err) {
-    await client.query("ROLLBACK");
     next(err);
-  } finally {
-    client.release();
   }
 };
 
@@ -170,10 +163,13 @@ export const resetGrades = async (req, res, next) => {
     const { sectionId } = req.params;
     const term = req.query.term;
 
+    if (term !== undefined && !isValidGradeTerm(term)) {
+      return res.status(400).json({ error: "Term must be midterm, finals, or semestral." });
+    }
     if (term) {
-      await query("DELETE FROM grades WHERE section_id = $1 AND term = $2", [sectionId, term]);
+      await query("DELETE FROM grades WHERE workspace_id = $1 AND section_id = $2 AND term = $3", [req.user.id, sectionId, term]);
     } else {
-      await query("DELETE FROM grades WHERE section_id = $1", [sectionId]);
+      await query("DELETE FROM grades WHERE workspace_id = $1 AND section_id = $2", [req.user.id, sectionId]);
     }
 
     res.json({ success: true, message: `Grades reset for section ${sectionId}` });

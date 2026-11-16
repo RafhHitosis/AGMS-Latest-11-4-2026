@@ -1,11 +1,30 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../lib/api";
+import { validateAppConfigResponse } from "../../shared/appConfigValidation.js";
+
+const DEFAULT_APP_TITLE = "AGMS";
+const DEFAULT_APP_SUBTITLE =
+  "Choose a year level and section to manage attendance and grades";
+const LEGACY_DEFAULT_APP_TITLES = new Set([
+  "Attendance & Grading System",
+  "Attendance System",
+]);
+const LEGACY_DEFAULT_APP_SUBTITLE =
+  "Choose a year level and section to manage attendance";
+
+const resolveAppTitle = (title) =>
+  !title || LEGACY_DEFAULT_APP_TITLES.has(title) ? DEFAULT_APP_TITLE : title;
+
+const resolveAppSubtitle = (subtitle) =>
+  !subtitle || subtitle === LEGACY_DEFAULT_APP_SUBTITLE
+    ? DEFAULT_APP_SUBTITLE
+    : subtitle;
 
 export const useSettings = () => {
   const [termDates, setTermDates] = useState({});
   const [appConfig, setAppConfig] = useState({
-    title: "",
-    subtitle: "Choose a year level and section to manage attendance",
+    title: DEFAULT_APP_TITLE,
+    subtitle: DEFAULT_APP_SUBTITLE,
     logo: localStorage.getItem("agms_app_logo") || "",
     sections: {},
     schedules: {},
@@ -17,15 +36,18 @@ export const useSettings = () => {
   const fetchConfig = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const data = await api.getConfig();
+      const validationError = validateAppConfigResponse(data);
+      if (validationError) throw new Error(validationError);
       setTermDates(data.termDates || {});
       const fetchedLogo = data.appLogo || localStorage.getItem("agms_app_logo") || "";
       if (data.appLogo) {
         localStorage.setItem("agms_app_logo", data.appLogo);
       }
       setAppConfig({
-        title: data.appTitle || "",
-        subtitle: data.appSubtitle !== undefined && data.appSubtitle !== null ? data.appSubtitle : "Choose a year level and section to manage attendance",
+        title: resolveAppTitle(data.appTitle),
+        subtitle: resolveAppSubtitle(data.appSubtitle),
         logo: fetchedLogo,
         sections: data.sections || {},
         schedules: data.schedules || {},
@@ -98,6 +120,27 @@ export const useSettings = () => {
     setAppConfig((prev) => ({ ...prev, schedules }));
   }, []);
 
+  const updateSectionSchedule = useCallback(async (sectionId, schedule) => {
+    const result = await api.updateSectionSchedule(sectionId, schedule);
+    setAppConfig((prev) => ({
+      ...prev,
+      schedules: { ...prev.schedules, [sectionId]: result.schedule },
+    }));
+    return result;
+  }, []);
+
+  const saveSectionSettings = useCallback(async (sectionId, settings) => {
+    const result = await api.saveSectionSettings(sectionId, settings);
+    if (Object.hasOwn(result, "termDates")) setTermDates(result.termDates);
+    if (Object.hasOwn(result, "schedule")) {
+      setAppConfig((prev) => ({
+        ...prev,
+        schedules: { ...prev.schedules, [sectionId]: result.schedule },
+      }));
+    }
+    return result;
+  }, []);
+
   return {
     termDates,
     updateTermDates,
@@ -109,6 +152,8 @@ export const useSettings = () => {
     updateSectionConfiguration,
     restoreSectionArchive,
     updateClassSchedules,
+    updateSectionSchedule,
+    saveSectionSettings,
     loading,
     error,
     refreshConfig: fetchConfig,

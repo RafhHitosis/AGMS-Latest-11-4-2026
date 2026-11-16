@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { X, Save, Sliders, Sun, Moon, Palette, Check, Sparkles, Info } from "lucide-react";
 import clsx from "clsx";
 import { useTheme } from "../context/ThemeContext";
+import { validateGradeConfiguration } from "../utils/gradeConfigValidation";
 
 export default function GradeConfigModal({
   isOpen,
@@ -9,22 +10,23 @@ export default function GradeConfigModal({
   config = {},
   onSaveConfig,
 }) {
-  const [localConfig, setLocalConfig] = useState(config);
+  const [prevConfig, setPrevConfig] = useState(config);
+  const [localConfig, setLocalConfig] = useState(() => (config ? JSON.parse(JSON.stringify(config)) : {}));
   const [activeTab, setActiveTab] = useState("weights");
   const { theme, setTheme } = useTheme();
   const [selectedTheme, setSelectedTheme] = useState(theme);
 
-  useEffect(() => {
-    if (isOpen && config) {
-      setLocalConfig(JSON.parse(JSON.stringify(config)));
-      setSelectedTheme(theme);
-    }
-  }, [isOpen, config, theme]);
+  if (config !== prevConfig) {
+    setPrevConfig(config);
+    setLocalConfig(config ? JSON.parse(JSON.stringify(config)) : {});
+    setSelectedTheme(theme);
+  }
 
   if (!isOpen || !localConfig) return null;
 
   const weights = localConfig.weights || {};
   const trans = localConfig.transmutation || {};
+  const validationError = validateGradeConfiguration(localConfig);
 
   const handleWeightChange = (key, val) => {
     const num = Math.max(0, Math.min(100, Number(val) || 0)) / 100;
@@ -49,6 +51,7 @@ export default function GradeConfigModal({
   };
 
   const handleSave = () => {
+    if (validationError) return;
     if (selectedTheme !== theme) {
       setTheme(selectedTheme);
     }
@@ -234,16 +237,16 @@ export default function GradeConfigModal({
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
-                      value={trans.mer_high || 100}
-                      onChange={(e) => handleTransChange("mer_high", e.target.value)}
+                      value={trans.me_high ?? trans.mer_high ?? 100}
+                      onChange={(e) => handleTransChange("me_high", e.target.value)}
                       className="w-14 text-center border border-sky-200 dark:border-sky-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded px-2 py-1 text-xs font-bold"
                       title="Highest"
                     />
                     <span className="text-xs text-slate-400">-</span>
                     <input
                       type="number"
-                      value={trans.mer_low || 50}
-                      onChange={(e) => handleTransChange("mer_low", e.target.value)}
+                      value={trans.me_low ?? trans.mer_low ?? 50}
+                      onChange={(e) => handleTransChange("me_low", e.target.value)}
                       className="w-14 text-center border border-sky-200 dark:border-sky-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded px-2 py-1 text-xs font-bold"
                       title="Lowest"
                     />
@@ -259,16 +262,16 @@ export default function GradeConfigModal({
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
-                      value={trans.qr_high || 100}
-                      onChange={(e) => handleTransChange("qr_high", e.target.value)}
+                      value={trans.quiz_high ?? trans.qr_high ?? 100}
+                      onChange={(e) => handleTransChange("quiz_high", e.target.value)}
                       className="w-14 text-center border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded px-2 py-1 text-xs font-bold"
                       title="Highest"
                     />
                     <span className="text-xs text-slate-400">-</span>
                     <input
                       type="number"
-                      value={trans.qr_low || 50}
-                      onChange={(e) => handleTransChange("qr_low", e.target.value)}
+                      value={trans.quiz_low ?? trans.qr_low ?? 50}
+                      onChange={(e) => handleTransChange("quiz_low", e.target.value)}
                       className="w-14 text-center border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded px-2 py-1 text-xs font-bold"
                       title="Lowest"
                     />
@@ -279,12 +282,12 @@ export default function GradeConfigModal({
                 <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/30 rounded-xl border border-emerald-100 dark:border-emerald-900 flex items-center justify-between">
                   <div>
                     <span className="font-bold text-xs text-emerald-900 dark:text-emerald-300 block">Recitation Rating (RR)</span>
-                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400">Formula standard: 100 max, 50 min</span>
+                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400">Formula standard: 95 max, 70 min</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
-                      value={trans.rec_high || 100}
+                      value={trans.rec_high ?? 95}
                       onChange={(e) => handleTransChange("rec_high", e.target.value)}
                       className="w-14 text-center border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded px-2 py-1 text-xs font-bold"
                       title="Highest"
@@ -292,7 +295,7 @@ export default function GradeConfigModal({
                     <span className="text-xs text-slate-400">-</span>
                     <input
                       type="number"
-                      value={trans.rec_low || 50}
+                      value={trans.rec_low ?? 70}
                       onChange={(e) => handleTransChange("rec_low", e.target.value)}
                       className="w-14 text-center border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded px-2 py-1 text-xs font-bold"
                       title="Lowest"
@@ -300,29 +303,11 @@ export default function GradeConfigModal({
                   </div>
                 </div>
 
-                {/* Deportment Bounds */}
-                <div className="p-3 bg-orange-50/60 dark:bg-orange-950/30 rounded-xl border border-orange-100 dark:border-orange-900 flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-xs text-orange-900 dark:text-orange-300 block">Deportment Rating (DR)</span>
-                    <span className="text-[11px] text-orange-700 dark:text-orange-400">Formula standard: 95 max, 70 min</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={trans.dep_high || 95}
-                      onChange={(e) => handleTransChange("dep_high", e.target.value)}
-                      className="w-14 text-center border border-orange-200 dark:border-orange-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded px-2 py-1 text-xs font-bold"
-                      title="Highest"
-                    />
-                    <span className="text-xs text-slate-400">-</span>
-                    <input
-                      type="number"
-                      value={trans.dep_low || 70}
-                      onChange={(e) => handleTransChange("dep_low", e.target.value)}
-                      className="w-14 text-center border border-orange-200 dark:border-orange-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded px-2 py-1 text-xs font-bold"
-                      title="Lowest"
-                    />
-                  </div>
+                <div className="p-3 bg-orange-50/60 dark:bg-orange-950/30 rounded-xl border border-orange-100 dark:border-orange-900">
+                  <span className="font-bold text-xs text-orange-900 dark:text-orange-300 block">Deportment Rating (DR)</span>
+                  <span className="text-[11px] text-orange-700 dark:text-orange-400">
+                    Uses the Excel formula: 90 minus absence deductions. This rating has no separate transmutation bounds.
+                  </span>
                 </div>
 
                 {/* Attendance Bounds */}
@@ -334,7 +319,7 @@ export default function GradeConfigModal({
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
-                      value={trans.att_high || 95}
+                      value={trans.att_high ?? 95}
                       onChange={(e) => handleTransChange("att_high", e.target.value)}
                       className="w-14 text-center border border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded px-2 py-1 text-xs font-bold"
                       title="Highest"
@@ -342,7 +327,7 @@ export default function GradeConfigModal({
                     <span className="text-xs text-slate-400">-</span>
                     <input
                       type="number"
-                      value={trans.att_low || 70}
+                      value={trans.att_low ?? 70}
                       onChange={(e) => handleTransChange("att_low", e.target.value)}
                       className="w-14 text-center border border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded px-2 py-1 text-xs font-bold"
                       title="Lowest"
@@ -443,8 +428,15 @@ export default function GradeConfigModal({
 
         {/* Footer */}
         <div className="px-6 py-4 bg-slate-50 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="text-xs text-slate-400 dark:text-slate-500">
-            {selectedTheme !== theme ? "Theme change staged • Click Save to apply" : "Weights & settings saved to database"}
+          <div className="min-w-0">
+            <div className="text-xs text-slate-400 dark:text-slate-500">
+              {selectedTheme !== theme ? "Theme change staged • Click Save to apply" : "Weights & settings saved to database"}
+            </div>
+            {validationError && (
+              <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-400" role="alert">
+                {validationError}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -455,7 +447,8 @@ export default function GradeConfigModal({
             </button>
             <button
               onClick={handleSave}
-              className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+              disabled={Boolean(validationError)}
+              className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5" />
               Save Configuration

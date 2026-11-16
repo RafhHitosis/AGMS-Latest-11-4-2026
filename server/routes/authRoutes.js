@@ -1,19 +1,31 @@
-import { randomBytes, createHmac } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { Router } from "express";
 import { pool } from "../config/db.js";
-import { verifyPassword } from "../auth/password.js";
+import {
+  hashAccessKey,
+  parseAccessKey,
+  verifyAccessKey,
+} from "../auth/accessKey.js";
 import {
   getSessionToken,
+  getSessionUser,
   hashSessionToken,
-  hasValidSession,
+  requireAuth,
   SESSION_COOKIE,
 } from "../middleware/requireAuth.js";
 import { requireAllowedOrigin } from "../middleware/allowedOrigin.js";
+import {
+  getPublicAdminRecoveryQuestions,
+  recoverAdminAccessKey,
+} from "../controllers/adminRecoveryController.js";
 
 const router = Router();
 const SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
 const LOGIN_WINDOW_MINUTES = 15;
 const MAX_LOGIN_ATTEMPTS = 5;
+const DUMMY_ACCESS_KEY_HASH = createHash("sha256")
+  .update("AGMS-invalid-access-key-dummy")
+  .digest("hex");
 
 const cookieBaseOptions = () => ({
   httpOnly: true,
@@ -23,7 +35,7 @@ const cookieBaseOptions = () => ({
 });
 
 const getRateLimitKey = (req) =>
-  createHmac("sha256", process.env.AUTH_PASSWORD_HASH)
+  createHash("sha256")
     .update(req.ip || req.socket.remoteAddress || "unknown")
     .digest("hex");
 
@@ -59,7 +71,61 @@ async function checkLoginRateLimit(ipHash) {
 
 router.get("/session", async (req, res, next) => {
   try {
-    res.json({ authenticated: await hasValidSession(getSessionToken(req)) });
+    const user = await getSessionUser(getSessionToken(req));
+    res.json({ authenticated: Boolean(user), user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/admin-recovery/questions", getPublicAdminRecoveryQuestions);
+
+router.post("/admin-recovery", requireAllowedOrigin, async (req, res, next) => {
+  try {
+    const attempt = await checkLoginRateLimit(getRateLimitKey(req));
+    if (attempt.locked) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((new Date(attempt.locked_until).getTime() - Date.now()) / 1000),
+      );
+      res.set("Retry-After", String(retryAfterSeconds));
+      res.status(429).json({ error: "Too many attempts. Try again in 15 minutes." });
+      return;
+    }
+
+    const recovery = await recoverAdminAccessKey(req.body?.answers);
+    if (recovery.status === "locked") {
+      res.set("Retry-After", String(recovery.retryAfterSeconds));
+      res.status(429).json({ error: "Too many attempts. Try again after the recovery cooldown." });
+      return;
+    }
+    if (recovery.status !== "success") {
+      res.status(401).json({ error: "Unable to verify recovery answers." });
+      return;
+    }
+
+    await pool.query("DELETE FROM auth_login_attempts WHERE ip_hash = $1", [
+      getRateLimitKey(req),
+    ]);
+    res.set("Cache-Control", "no-store");
+    res.json({
+      accessKeyId: recovery.key.accessKeyId,
+      accessKey: recovery.key.accessKey,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/welcome-acknowledgment", requireAuth, async (req, res, next) => {
+  try {
+    await pool.query(
+      `UPDATE app_users
+       SET welcome_acknowledged_at = COALESCE(welcome_acknowledged_at, CURRENT_TIMESTAMP)
+       WHERE id = $1`,
+      [req.user.id],
+    );
+    res.json({ welcome_acknowledged: true });
   } catch (error) {
     next(error);
   }
@@ -67,16 +133,6 @@ router.get("/session", async (req, res, next) => {
 
 router.post("/login", requireAllowedOrigin, async (req, res, next) => {
   try {
-    const { password } = req.body || {};
-    if (
-      typeof password !== "string" ||
-      password.length === 0 ||
-      password.length > 256
-    ) {
-      res.status(400).json({ error: "Enter a valid password." });
-      return;
-    }
-
     const attempt = await checkLoginRateLimit(getRateLimitKey(req));
     if (attempt.locked) {
       const retryAfterSeconds = Math.max(
@@ -90,16 +146,45 @@ router.post("/login", requireAllowedOrigin, async (req, res, next) => {
       return;
     }
 
-    if (!(await verifyPassword(password, process.env.AUTH_PASSWORD_HASH))) {
-      res.status(401).json({ error: "Incorrect Access key." });
+    const parsedKey = parseAccessKey(req.body?.accessKey);
+    if (!parsedKey) {
+      res.status(401).json({ error: "Incorrect access key." });
+      return;
+    }
+
+    let user;
+    let keyMatches;
+    if (parsedKey.accessKeyId) {
+      const { rows } = await pool.query(
+        `SELECT id, display_name, role, is_active, access_key_hash
+         FROM app_users WHERE access_key_id = $1`,
+        [parsedKey.accessKeyId],
+      );
+      user = rows[0];
+      keyMatches = verifyAccessKey(
+        parsedKey.accessKey,
+        user?.access_key_hash || DUMMY_ACCESS_KEY_HASH,
+      );
+    } else {
+      const { rows } = await pool.query(
+        `SELECT id, display_name, role, is_active
+         FROM app_users
+         WHERE access_key_hash = $1`,
+        [hashAccessKey(parsedKey.accessKey)],
+      );
+      user = rows[0];
+      keyMatches = Boolean(user);
+    }
+    if (!user || !user.is_active || !keyMatches) {
+      res.status(401).json({ error: "Incorrect access key." });
       return;
     }
 
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
     await pool.query(
-      "INSERT INTO auth_sessions (token_hash, expires_at) VALUES ($1, $2)",
-      [hashSessionToken(token), expiresAt],
+      "INSERT INTO auth_sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)",
+      [hashSessionToken(token), user.id, expiresAt],
     );
     await pool.query("DELETE FROM auth_login_attempts WHERE ip_hash = $1", [
       getRateLimitKey(req),
@@ -110,7 +195,7 @@ router.post("/login", requireAllowedOrigin, async (req, res, next) => {
       ...cookieBaseOptions(),
       maxAge: SESSION_DURATION_MS,
     });
-    res.json({ authenticated: true });
+    res.json({ authenticated: true, user: await getSessionUser(token) });
   } catch (error) {
     next(error);
   }

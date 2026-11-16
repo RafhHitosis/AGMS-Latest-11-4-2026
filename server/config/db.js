@@ -15,7 +15,7 @@ export const pool = new Pool({
   host: process.env.PGHOST || "localhost",
   port: parseInt(process.env.PGPORT || "5432", 10),
   user: process.env.PGUSER || "postgres",
-  password: process.env.PGPASSWORD || "qweR123$",
+  password: process.env.PGPASSWORD,
   database: process.env.PGDATABASE || "attendance_db",
   max: 20,
   idleTimeoutMillis: 30000,

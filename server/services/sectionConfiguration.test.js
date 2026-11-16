@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { saveSectionConfiguration } from "./sectionConfiguration.js";
 
+const WORKSPACE_ID = "workspace-1";
+
 class MockClient {
   constructor(sections, schedules = { A: [1] }) {
     this.sections = sections;
@@ -20,7 +22,7 @@ class MockClient {
       return { rows: [{ sections: this.sections, schedules: this.schedules }] };
     }
     if (normalizedSql.startsWith("SELECT id, section_id, year_level, section_data")) {
-      return { rows: this.archiveRows.filter((archive) => archive.id === params[0]) };
+      return { rows: this.archiveRows.filter((archive) => archive.id === params[1]) };
     }
     if (normalizedSql.startsWith("SELECT id, section_id FROM section_archives")) {
       return {
@@ -65,6 +67,7 @@ test("deletes only removed section data and keeps schedules for active sections"
 
   const result = await saveSectionConfiguration(
     client,
+    WORKSPACE_ID,
     { "Year 2": ["A"] },
     { A: [1, 3], B: [2], orphaned: [4] },
   );
@@ -80,26 +83,27 @@ test("deletes only removed section data and keeps schedules for active sections"
       .filter(({ sql }) => sql.startsWith("DELETE FROM"))
       .map(({ sql, params }) => [sql, params[0]]),
     [
-      ["DELETE FROM attendance WHERE section_id = $1", "B"],
-      ["DELETE FROM grades WHERE section_id = $1", "B"],
-      ["DELETE FROM students WHERE section_id = $1", "B"],
-      ["DELETE FROM grade_configs WHERE section_id = $1", "B"],
+      ["DELETE FROM attendance WHERE workspace_id = $2 AND section_id = $1", "B"],
+      ["DELETE FROM grades WHERE workspace_id = $2 AND section_id = $1", "B"],
+      ["DELETE FROM students WHERE workspace_id = $2 AND section_id = $1", "B"],
+      ["DELETE FROM grade_configs WHERE workspace_id = $2 AND section_id = $1", "B"],
     ],
   );
   assert.equal(client.calls.at(-1).sql, "COMMIT");
   const archiveCall = client.calls.find(({ sql }) => sql.startsWith("INSERT INTO section_archives"));
-  assert.equal(archiveCall.params[0], "B");
-  assert.equal(archiveCall.params[1], "Year 1");
-  assert.deepEqual(JSON.parse(archiveCall.params[2]).schedule, []);
+  assert.equal(archiveCall.params[0], WORKSPACE_ID);
+  assert.equal(archiveCall.params[1], "B");
+  assert.equal(archiveCall.params[2], "Year 1");
+  assert.deepEqual(JSON.parse(archiveCall.params[3]).schedule, []);
   assert.match(archiveCall.sql, /INTERVAL '30 days'/);
 });
 
 test("rolls back section cleanup when a database operation fails", async () => {
   const client = new MockClient({ "Year 1": ["A"] });
-  client.failOn = "DELETE FROM grades WHERE section_id = $1";
+  client.failOn = "DELETE FROM grades WHERE workspace_id = $2 AND section_id = $1";
 
   await assert.rejects(
-    saveSectionConfiguration(client, {}, {}),
+    saveSectionConfiguration(client, WORKSPACE_ID, {}, {}),
     /Database failure/,
   );
   assert.equal(client.calls.at(-1).sql, "ROLLBACK");
@@ -111,7 +115,7 @@ test("prevents reusing a section name while its archive is recoverable", async (
   client.archivedSections = ["101"];
 
   await assert.rejects(
-    saveSectionConfiguration(client, { "1st Year": ["101"] }, {}),
+    saveSectionConfiguration(client, WORKSPACE_ID, { "1st Year": ["101"] }, {}),
     { statusCode: 409 },
   );
   assert.equal(client.calls.at(-1).sql, "ROLLBACK");
@@ -137,6 +141,7 @@ test("restores staged archives only as part of saving section configuration", as
 
   const result = await saveSectionConfiguration(
     client,
+    WORKSPACE_ID,
     { "1st Year": ["101"] },
     {},
     [],
@@ -161,6 +166,7 @@ test("copies all section data when renaming a still-shared section", async () =>
 
   const result = await saveSectionConfiguration(
     client,
+    WORKSPACE_ID,
     { "1st Year": ["101"], "2nd Year": ["201"] },
     { "101": [1, 3] },
     [{ sourceSectionId: "101", targetSectionId: "201" }],
@@ -187,6 +193,7 @@ test("rolls back copied data when a dependent record insert fails", async () => 
   await assert.rejects(
     saveSectionConfiguration(
       client,
+      WORKSPACE_ID,
       { "1st Year": ["101"], "2nd Year": ["201"] },
       { "101": [1, 3] },
       [{ sourceSectionId: "101", targetSectionId: "201" }],
@@ -201,7 +208,7 @@ test("rejects duplicate section copy targets", async () => {
   const client = new MockClient({});
 
   await assert.rejects(
-    saveSectionConfiguration(client, {}, {}, [
+    saveSectionConfiguration(client, WORKSPACE_ID, {}, {}, [
       { sourceSectionId: "101", targetSectionId: "201" },
       { sourceSectionId: "102", targetSectionId: "201" },
     ]),

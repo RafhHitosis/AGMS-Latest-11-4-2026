@@ -652,7 +652,7 @@ export default function GradeComputationGuideModal({ isOpen, onClose }) {
         {/* Footer */}
         <div className="px-6 py-3.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
           <div className="text-xs text-slate-500 dark:text-slate-400">
-            Formulas adhere strictly to the institution&apos;s official MS Excel grading rules.
+            Calculations are based on the provided Excel grading formulas.
           </div>
           <button
             onClick={onClose}

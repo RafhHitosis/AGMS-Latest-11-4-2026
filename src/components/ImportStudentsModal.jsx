@@ -1,7 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import { X, ClipboardPaste, UploadCloud, Copy, FileSpreadsheet, Loader2, Info } from "lucide-react";
-import ExcelJS from "exceljs";
 import api from "../lib/api";
+import DropdownSelect from "./DropdownSelect";
+import {
+  parseCsvFirstColumn,
+  prepareStudentImportNames,
+  splitPastedStudentNames,
+} from "../utils/studentImport";
 
 export default function ImportStudentsModal({
   isOpen,
@@ -9,10 +14,13 @@ export default function ImportStudentsModal({
   onImport,
   sectionId,
   appConfig,
+  existingNames = [],
 }) {
   const [activeTab, setActiveTab] = useState("paste"); // paste, upload, clone
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [previewNames, setPreviewNames] = useState([]);
+  const [duplicateCount, setDuplicateCount] = useState(0);
 
   // Paste Tab State
   const [pasteText, setPasteText] = useState("");
@@ -30,6 +38,8 @@ export default function ImportStudentsModal({
     if (isOpen) {
       setPasteText("");
       setError(null);
+      setPreviewNames([]);
+      setDuplicateCount(0);
       setLoading(false);
       setSelectedSectionToClone("");
       setActiveTab("paste");
@@ -38,44 +48,41 @@ export default function ImportStudentsModal({
 
   if (!isOpen) return null;
 
+  const preparePreview = (names) => {
+    const prepared = prepareStudentImportNames(names, existingNames);
+    setPreviewNames(prepared.names);
+    setDuplicateCount(prepared.duplicateCount);
+    setError(
+      prepared.names.length === 0
+        ? "No new, valid student names were found."
+        : null
+    );
+  };
+
+  const handleConfirmImport = async () => {
+    if (previewNames.length === 0) return;
+    setLoading(true);
+    setError(null);
+    let imported = false;
+    try {
+      await onImport(previewNames);
+      imported = true;
+    } catch (err) {
+      console.error("Failed to import students:", err);
+      setError(err.message || "Failed to import students. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+    if (imported) onClose();
+  };
+
   const handlePasteSubmit = () => {
     if (!pasteText.trim()) {
       setError("Please paste some names first.");
       return;
     }
 
-    setLoading(true);
-    try {
-      // Split by newline
-      const rawLines = pasteText.split(/\r?\n/);
-      let cleanedNames = [];
-      
-      for (const line of rawLines) {
-        if (!line.trim()) continue;
-        
-        // If pasted from excel horizontally, it has tabs
-        if (line.includes("\t")) {
-          cleanedNames.push(...line.split("\t").map((n) => n.trim()).filter(n => n));
-        } else {
-          cleanedNames.push(line.trim());
-        }
-      }
-
-      // Remove duplicates
-      const uniqueNames = [...new Set(cleanedNames)];
-
-      if (uniqueNames.length === 0) {
-        setError("No valid names found in text.");
-        setLoading(false);
-        return;
-      }
-
-      onImport(uniqueNames);
-    } catch (err) {
-      setError("Failed to parse the pasted text.");
-    } finally {
-      setLoading(false);
-    }
+    preparePreview(splitPastedStudentNames(pasteText));
   };
 
   const handleFileUpload = async (e) => {
@@ -91,26 +98,9 @@ export default function ImportStudentsModal({
 
       if (fileName.endsWith(".csv")) {
         const text = await file.text();
-        const lines = text.split(/\r?\n/);
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          let cellValue = line.trim();
-          // If CSV has quote-enclosed strings e.g. "DELA CRUZ, Juan"
-          if (cellValue.startsWith('"')) {
-            const match = cellValue.match(/^"([^"]+)"/);
-            if (match) cellValue = match[1];
-          } else if (cellValue.includes(",")) {
-            cellValue = cellValue.split(",")[0].trim();
-          }
-          if (
-            cellValue.length > 0 &&
-            cellValue.toLowerCase() !== "name" &&
-            cellValue.toLowerCase() !== "student name"
-          ) {
-            names.push(cellValue);
-          }
-        }
+        names.push(...parseCsvFirstColumn(text));
       } else {
+        const { default: ExcelJS } = await import("exceljs");
         const workbook = new ExcelJS.Workbook();
         const arrayBuffer = await file.arrayBuffer();
         await workbook.xlsx.load(arrayBuffer);
@@ -131,15 +121,7 @@ export default function ImportStudentsModal({
         });
       }
 
-      const uniqueNames = [...new Set(names)];
-
-      if (uniqueNames.length === 0) {
-        setError("No valid names found in the uploaded file.");
-        setLoading(false);
-        return;
-      }
-
-      onImport(uniqueNames);
+      preparePreview(names);
     } catch (err) {
       console.error(err);
       setError("Failed to parse the file. Please ensure it's a valid .xlsx or .csv file.");
@@ -161,13 +143,7 @@ export default function ImportStudentsModal({
     try {
       const clonedStudents = await api.getStudents(selectedSectionToClone);
       if (clonedStudents && clonedStudents.length > 0) {
-        const studentNames = clonedStudents.map((val) => val.name);
-        const uniqueNames = [...new Set(studentNames)];
-        if (uniqueNames.length > 0) {
-          onImport(uniqueNames);
-        } else {
-          setError(`No valid students found in Section ${selectedSectionToClone}.`);
-        }
+        preparePreview(clonedStudents.map((student) => student.name));
       } else {
         setError(`Section ${selectedSectionToClone} is empty.`);
       }
@@ -244,7 +220,51 @@ export default function ImportStudentsModal({
             </div>
           )}
 
-          {activeTab === "paste" && (
+          {previewNames.length > 0 ? (
+            <div className="space-y-4">
+              <div>
+                <h3 className="font-semibold text-slate-800 dark:text-slate-100">
+                  Review {previewNames.length} student{previewNames.length === 1 ? "" : "s"}
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  {duplicateCount > 0
+                    ? `${duplicateCount} duplicate or already-listed name${duplicateCount === 1 ? " was" : "s were"} skipped.`
+                    : "No duplicate names were found."}
+                </p>
+              </div>
+              <ol className="max-h-64 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+                {previewNames.slice(0, 100).map((name, index) => (
+                  <li key={`${name}-${index}`} className="px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
+                    {name}
+                  </li>
+                ))}
+              </ol>
+              {previewNames.length > 100 && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Showing the first 100 of {previewNames.length} names.
+                </p>
+              )}
+              <div className="flex justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPreviewNames([])}
+                  disabled={loading}
+                  className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm font-semibold text-slate-600 dark:text-slate-300 disabled:opacity-50"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmImport}
+                  disabled={loading}
+                  className="bg-emerald-600 text-white px-5 py-2 rounded-lg font-semibold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Import {previewNames.length} Students
+                </button>
+              </div>
+            </div>
+          ) : activeTab === "paste" && (
             <div className="space-y-4">
               <p className="text-sm text-slate-600 dark:text-slate-300">
                 Paste your class list here. Put one student name per line.
@@ -269,7 +289,7 @@ export default function ImportStudentsModal({
             </div>
           )}
 
-          {activeTab === "upload" && (
+          {!previewNames.length && activeTab === "upload" && (
             <div className="space-y-6">
               <div className="bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 p-4 rounded-xl text-sm border border-blue-100 dark:border-blue-900/50 flex gap-3">
                 <Info className="w-5 h-5 flex-shrink-0 text-blue-500" />
@@ -307,7 +327,7 @@ export default function ImportStudentsModal({
             </div>
           )}
 
-          {activeTab === "clone" && (
+          {!previewNames.length && activeTab === "clone" && (
             <div className="space-y-6">
               <p className="text-sm text-slate-600 dark:text-slate-300">
                 Instantly copy the entire student roster from another section into this one. Useful for sections that take multiple subjects together.
@@ -322,17 +342,17 @@ export default function ImportStudentsModal({
                     No other sections found in the system.
                   </div>
                 ) : (
-                  <select
+                  <DropdownSelect
                     value={selectedSectionToClone}
                     onChange={(e) => setSelectedSectionToClone(e.target.value)}
-                    className="w-full border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium cursor-pointer"
+                    className="w-full border border-slate-200 dark:border-slate-700 rounded-xl pl-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium cursor-pointer"
                     disabled={loading}
                   >
                     <option value="" disabled>-- Select a Section --</option>
                     {availableSections.map(sec => (
                       <option key={sec} value={sec}>Section {sec}</option>
                     ))}
-                  </select>
+                  </DropdownSelect>
                 )}
               </div>
 

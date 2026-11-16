@@ -29,7 +29,9 @@ export function ThemeProvider({ children }) {
     }
     try {
       localStorage.setItem("app_theme", theme);
-    } catch (_) {}
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
   }, [theme]);
 
   const toggleTheme = () => {
@@ -50,6 +52,7 @@ export function ThemeProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useTheme = () => useContext(ThemeContext);
 
 export default ThemeContext;

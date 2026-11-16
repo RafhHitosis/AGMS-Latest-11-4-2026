@@ -12,6 +12,7 @@ const createArchiveConflictError = (section) =>
 
 export const saveSectionConfiguration = async (
   client,
+  workspaceId,
   sections,
   schedules,
   sectionCopies = [],
@@ -43,7 +44,8 @@ export const saveSectionConfiguration = async (
     }
 
     const currentConfig = await client.query(
-      "SELECT sections, schedules FROM app_config WHERE id = 1 FOR UPDATE",
+      "SELECT sections, schedules FROM app_config WHERE workspace_id = $1 AND id = 1 FOR UPDATE",
+      [workspaceId],
     );
     if (currentConfig.rows.length === 0) {
       throw new Error("App configuration row was not found");
@@ -64,6 +66,7 @@ export const saveSectionConfiguration = async (
         currentSections,
         sections,
         requestedSchedules,
+        workspaceId,
       );
       requestedSchedules = restored.schedules;
       restoredSections.push(restored);
@@ -81,8 +84,8 @@ export const saveSectionConfiguration = async (
     const archivedSections = await client.query(
       `SELECT id, section_id
        FROM section_archives
-       WHERE section_id = ANY($1::varchar[]) AND expires_at > NOW()`,
-      [addedSections],
+       WHERE workspace_id = $2 AND section_id = ANY($1::varchar[]) AND expires_at > NOW()`,
+      [addedSections, workspaceId],
     );
     const conflictingArchive = archivedSections.rows.find(
       (archive) => !archiveIds.includes(archive.id),
@@ -109,11 +112,11 @@ export const saveSectionConfiguration = async (
 
       const targetHasData = await client.query(
         `SELECT
-           EXISTS (SELECT 1 FROM students WHERE section_id = $1) AS students,
-           EXISTS (SELECT 1 FROM attendance WHERE section_id = $1) AS attendance,
-           EXISTS (SELECT 1 FROM grades WHERE section_id = $1) AS grades,
-           EXISTS (SELECT 1 FROM grade_configs WHERE section_id = $1) AS grade_configs`,
-        [targetSectionId],
+           EXISTS (SELECT 1 FROM students WHERE workspace_id = $1 AND section_id = $2) AS students,
+           EXISTS (SELECT 1 FROM attendance WHERE workspace_id = $1 AND section_id = $2) AS attendance,
+           EXISTS (SELECT 1 FROM grades WHERE workspace_id = $1 AND section_id = $2) AS grades,
+           EXISTS (SELECT 1 FROM grade_configs WHERE workspace_id = $1 AND section_id = $2) AS grade_configs`,
+        [workspaceId, targetSectionId],
       );
       if (Object.values(targetHasData.rows[0]).some(Boolean)) {
         throw Object.assign(
@@ -138,42 +141,45 @@ export const saveSectionConfiguration = async (
         `INSERT INTO section_student_copy_map
          SELECT $1, $2, id, gen_random_uuid()::text
          FROM students
-         WHERE section_id = $1`,
-        [sourceSectionId, targetSectionId],
+         WHERE workspace_id = $3 AND section_id = $1`,
+        [sourceSectionId, targetSectionId, workspaceId],
       );
       await client.query(
-        `INSERT INTO students (id, section_id, name, created_at)
-         SELECT copy.target_student_id, $2, source.name, source.created_at
+        `INSERT INTO students (workspace_id, id, section_id, name, created_at)
+         SELECT $3, copy.target_student_id, $2, source.name, source.created_at
          FROM section_student_copy_map AS copy
          JOIN students AS source
            ON source.id = copy.source_student_id AND source.section_id = copy.source_section_id
+          AND source.workspace_id = $3
          WHERE copy.source_section_id = $1 AND copy.target_section_id = $2`,
-        [sourceSectionId, targetSectionId],
+        [sourceSectionId, targetSectionId, workspaceId],
       );
       await client.query(
-        `INSERT INTO attendance (section_id, student_id, date, status, created_at)
-         SELECT $2, copy.target_student_id, source.date, source.status, source.created_at
+        `INSERT INTO attendance (workspace_id, section_id, student_id, date, status, created_at)
+         SELECT $3, $2, copy.target_student_id, source.date, source.status, source.created_at
          FROM attendance AS source
          JOIN section_student_copy_map AS copy
            ON copy.source_section_id = source.section_id AND copy.source_student_id = source.student_id
-         WHERE copy.source_section_id = $1 AND copy.target_section_id = $2`,
-        [sourceSectionId, targetSectionId],
+         WHERE source.workspace_id = $3
+           AND copy.source_section_id = $1 AND copy.target_section_id = $2`,
+        [sourceSectionId, targetSectionId, workspaceId],
       );
       await client.query(
-        `INSERT INTO grades (section_id, term, student_id, scores, updated_at)
-         SELECT $2, source.term, copy.target_student_id, source.scores, source.updated_at
+        `INSERT INTO grades (workspace_id, section_id, term, student_id, scores, updated_at)
+         SELECT $3, $2, source.term, copy.target_student_id, source.scores, source.updated_at
          FROM grades AS source
          JOIN section_student_copy_map AS copy
            ON copy.source_section_id = source.section_id AND copy.source_student_id = source.student_id
-         WHERE copy.source_section_id = $1 AND copy.target_section_id = $2`,
-        [sourceSectionId, targetSectionId],
+         WHERE source.workspace_id = $3
+           AND copy.source_section_id = $1 AND copy.target_section_id = $2`,
+        [sourceSectionId, targetSectionId, workspaceId],
       );
       await client.query(
-        `INSERT INTO grade_configs (section_id, term, config, updated_at)
-         SELECT $2, term, config, updated_at
+        `INSERT INTO grade_configs (workspace_id, section_id, term, config, updated_at)
+         SELECT $3, $2, term, config, updated_at
          FROM grade_configs
-         WHERE section_id = $1`,
-        [sourceSectionId, targetSectionId],
+         WHERE workspace_id = $3 AND section_id = $1`,
+        [sourceSectionId, targetSectionId, workspaceId],
       );
       if (!Object.hasOwn(cleanedSchedules, targetSectionId)) {
         cleanedSchedules[targetSectionId] = currentConfig.rows[0].schedules?.[sourceSectionId] || [];
@@ -185,20 +191,20 @@ export const saveSectionConfiguration = async (
         ([, sectionNames]) => sectionNames.includes(section),
       )?.[0];
       const students = await client.query(
-        "SELECT id, section_id, name, created_at FROM students WHERE section_id = $1",
-        [section],
+        "SELECT id, section_id, name, created_at FROM students WHERE workspace_id = $2 AND section_id = $1",
+        [section, workspaceId],
       );
       const attendance = await client.query(
-        "SELECT section_id, student_id, date, status, created_at FROM attendance WHERE section_id = $1",
-        [section],
+        "SELECT section_id, student_id, date, status, created_at FROM attendance WHERE workspace_id = $2 AND section_id = $1",
+        [section, workspaceId],
       );
       const grades = await client.query(
-        "SELECT section_id, term, student_id, scores, updated_at FROM grades WHERE section_id = $1",
-        [section],
+        "SELECT section_id, term, student_id, scores, updated_at FROM grades WHERE workspace_id = $2 AND section_id = $1",
+        [section, workspaceId],
       );
       const gradeConfigs = await client.query(
-        "SELECT section_id, term, config, updated_at FROM grade_configs WHERE section_id = $1",
-        [section],
+        "SELECT section_id, term, config, updated_at FROM grade_configs WHERE workspace_id = $2 AND section_id = $1",
+        [section, workspaceId],
       );
       const sectionData = {
         students: students.rows,
@@ -209,22 +215,22 @@ export const saveSectionConfiguration = async (
       };
 
       await client.query(
-        `INSERT INTO section_archives (section_id, year_level, section_data, expires_at)
-         VALUES ($1, $2, $3::jsonb, NOW() + INTERVAL '30 days')`,
-        [section, yearLevel || "", JSON.stringify(sectionData)],
+        `INSERT INTO section_archives (workspace_id, section_id, year_level, section_data, expires_at)
+         VALUES ($1, $2, $3, $4::jsonb, NOW() + INTERVAL '30 days')`,
+        [workspaceId, section, yearLevel || "", JSON.stringify(sectionData)],
       );
-      await client.query("DELETE FROM attendance WHERE section_id = $1", [section]);
-      await client.query("DELETE FROM grades WHERE section_id = $1", [section]);
-      await client.query("DELETE FROM students WHERE section_id = $1", [section]);
-      await client.query("DELETE FROM grade_configs WHERE section_id = $1", [section]);
+      await client.query("DELETE FROM attendance WHERE workspace_id = $2 AND section_id = $1", [section, workspaceId]);
+      await client.query("DELETE FROM grades WHERE workspace_id = $2 AND section_id = $1", [section, workspaceId]);
+      await client.query("DELETE FROM students WHERE workspace_id = $2 AND section_id = $1", [section, workspaceId]);
+      await client.query("DELETE FROM grade_configs WHERE workspace_id = $2 AND section_id = $1", [section, workspaceId]);
     }
 
     const updatedConfig = await client.query(
       `UPDATE app_config
        SET sections = $1::jsonb, schedules = $2::jsonb, updated_at = NOW()
-       WHERE id = 1
+       WHERE workspace_id = $3 AND id = 1
        RETURNING sections, schedules`,
-      [JSON.stringify(sections), JSON.stringify(cleanedSchedules)],
+      [JSON.stringify(sections), JSON.stringify(cleanedSchedules), workspaceId],
     );
     if (updatedConfig.rows.length === 0) {
       throw new Error("App configuration row was not found");

@@ -5,7 +5,6 @@ import {
   updateHoliday,
   deleteHoliday,
 } from "../controllers/holidayController.js";
-
 const router = Router();
 
 router.get("/", getHolidays);

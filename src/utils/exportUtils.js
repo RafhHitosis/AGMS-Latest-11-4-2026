@@ -1,6 +1,5 @@
-import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
-import { format, isSaturday, isSunday, isDate } from "date-fns";
+import { format, isSaturday, isSunday } from "date-fns";
 import { isDateHoliday } from "./holidays";
 import { groupDatesByMonth, chunkDates } from "./dateUtils";
 
@@ -42,11 +41,10 @@ export const exportToExcel = async ({
   students,
   attendance,
   customHolidays,
-  stats,
-  totalSchoolDays,
   headerInfo,
   scheduleConfig,
 }) => {
+  const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet(`Section ${sectionId}`);
 

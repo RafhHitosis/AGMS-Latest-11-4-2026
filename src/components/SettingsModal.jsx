@@ -48,18 +48,17 @@ export default function SettingsModal({
   sectionId,
   // Global Settings Props
   customHolidays = [],
-  addHoliday,
-  updateHoliday,
-  removeHoliday,
   termDates = {},
-  onUpdateTermDates,
   // Section Settings Props
   currentSchedule,
-  onSaveSchedule,
+  onSaveSettings,
   onDeleteAllStudents,
   hasStudents,
+  currentUser,
 }) {
-  const [activeTab, setActiveTab] = useState("schedule");
+  const canEditSection = currentUser?.role === "admin" || currentUser?.role === "teacher";
+  const canManageGlobalSettings = canEditSection;
+  const [activeTab, setActiveTab] = useState(canEditSection ? "schedule" : "appearance");
   const [date, setDate] = useState("");
   const [name, setName] = useState("");
   const [editingHolidayId, setEditingHolidayId] = useState(null);
@@ -99,14 +98,14 @@ export default function SettingsModal({
           : [],
       );
       setSelectedTheme(theme);
-      setActiveTab("schedule");
+      setActiveTab(canEditSection ? "schedule" : "appearance");
       setIsSaving(false);
       setSaveError("");
       setDate("");
       setName("");
       setEditingHolidayId(null);
     }
-  }, [isOpen, currentSchedule, termDates, customHolidays, theme]);
+  }, [isOpen, currentSchedule, termDates, customHolidays, theme, canEditSection]);
 
   const hasUnsavedSchedule = useMemo(() => {
     if (selectedDays.length !== initialSchedule.length) return true;
@@ -137,9 +136,8 @@ export default function SettingsModal({
   const hasUnsavedTheme = selectedTheme !== theme;
 
   const hasUnsavedChanges =
-    hasUnsavedSchedule ||
-    hasUnsavedDates ||
-    hasUnsavedHolidays ||
+    (canEditSection && hasUnsavedSchedule) ||
+    (canManageGlobalSettings && (hasUnsavedDates || hasUnsavedHolidays)) ||
     hasUnsavedTheme;
 
   const handleClose = () => {
@@ -229,49 +227,26 @@ export default function SettingsModal({
     setIsSaving(true);
     setSaveError("");
     try {
-      // 1. Save Term Dates if changed
-      if (hasUnsavedDates) {
-        await onUpdateTermDates(localTermDates);
+      const settings = {};
+      if (canManageGlobalSettings && hasUnsavedDates) {
+        settings.termDates = localTermDates;
       }
-      // 2. Save Class Schedule if changed
-      if (hasUnsavedSchedule) {
-        const sortedSchedule = [...selectedDays].sort();
-        await onSaveSchedule({ schedule: sortedSchedule });
+      if (canEditSection && hasUnsavedSchedule) {
+        settings.schedule = [...selectedDays].sort();
       }
-      // 3. Save Custom Holidays if changed
-      if (hasUnsavedHolidays) {
-        // Delete removed holidays
-        const toDelete = customHolidays.filter(
-          (orig) => !localHolidays.some((local) => local.id === orig.id),
-        );
-        for (const hol of toDelete) {
-          await removeHoliday(hol.id);
-        }
-        const toUpdate = localHolidays.filter((local) => {
-          if (local.isStagedNew || String(local.id).startsWith("temp_"))
-            return false;
-          const original = customHolidays.find(
-            (holiday) => holiday.id === local.id,
-          );
-          return (
-            original &&
-            (original.name !== local.name ||
-              formatDateForInput(original.date) !==
-                formatDateForInput(local.date))
-          );
+      if (canManageGlobalSettings && hasUnsavedHolidays) {
+        settings.holidays = localHolidays.map((holiday) => {
+          const item = { date: holiday.date, name: holiday.name };
+          if (!holiday.isStagedNew && !String(holiday.id).startsWith("temp_")) {
+            item.id = String(holiday.id);
+          }
+          return item;
         });
-        for (const hol of toUpdate) {
-          await updateHoliday(hol.id, hol.date, hol.name);
-        }
-        // Add newly staged holidays
-        const toAdd = localHolidays.filter(
-          (local) => local.isStagedNew || String(local.id).startsWith("temp_"),
-        );
-        for (const hol of toAdd) {
-          await addHoliday(hol.date, hol.name);
-        }
       }
-      // 4. Apply Theme if changed
+      if (Object.keys(settings).length > 0) {
+        await onSaveSettings(settings);
+      }
+
       if (hasUnsavedTheme) {
         setTheme(selectedTheme);
       }
@@ -279,7 +254,7 @@ export default function SettingsModal({
       onClose();
     } catch (err) {
       console.error("Failed to save settings:", err);
-      setSaveError("Some changes could not be saved. Please try again.");
+      setSaveError(err.message || "Settings could not be saved. Please try again.");
     } finally {
       isSavingRef.current = false;
       setIsSaving(false);
@@ -318,8 +293,11 @@ export default function SettingsModal({
                 Attendance &amp; Section Settings
               </h2>
               <p className="text-xs text-slate-300">
-                Configuring Section {sectionId} schedule, term dates, and
-                calendar
+                {canManageGlobalSettings
+                  ? `Configuring Section ${sectionId}, term dates, and calendar`
+                  : canEditSection
+                    ? `Configuring Section ${sectionId} schedule and appearance`
+                    : "Personal appearance preferences"}
               </p>
             </div>
           </div>
@@ -335,7 +313,7 @@ export default function SettingsModal({
 
         {/* Navigation Tabs - Identical Design with Grading Configuration */}
         <div className="flex border-b border-slate-200 dark:border-slate-800 px-6 bg-slate-50 dark:bg-slate-850 overflow-x-auto select-none cursor-grab">
-          <button
+          {canEditSection && <button
             type="button"
             onClick={() => setActiveTab("schedule")}
             className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
@@ -349,9 +327,9 @@ export default function SettingsModal({
             {hasUnsavedSchedule && (
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
             )}
-          </button>
+          </button>}
 
-          <button
+          {canManageGlobalSettings && <button
             type="button"
             onClick={() => setActiveTab("dates")}
             className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
@@ -365,9 +343,9 @@ export default function SettingsModal({
             {hasUnsavedDates && (
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
             )}
-          </button>
+          </button>}
 
-          <button
+          {canManageGlobalSettings && <button
             type="button"
             onClick={() => setActiveTab("holidays")}
             className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
@@ -386,7 +364,7 @@ export default function SettingsModal({
             {hasUnsavedHolidays && (
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
             )}
-          </button>
+          </button>}
 
           <button
             type="button"
@@ -404,7 +382,7 @@ export default function SettingsModal({
             )}
           </button>
 
-          <button
+          {canEditSection && <button
             type="button"
             onClick={() => setActiveTab("danger")}
             className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
@@ -415,13 +393,13 @@ export default function SettingsModal({
           >
             <ShieldAlert className="w-3.5 h-3.5 text-red-500" />
             Reset Data
-          </button>
+          </button>}
         </div>
 
         {/* Tab Body Content */}
         <div className="p-6 overflow-y-auto flex-1 space-y-5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
           {/* TAB 1: Class Schedule */}
-          {activeTab === "schedule" && (
+          {canEditSection && activeTab === "schedule" && (
             <div className="space-y-4 animate-in fade-in duration-150">
               <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-850/40">
                 <div className="flex items-center justify-between">
@@ -483,7 +461,7 @@ export default function SettingsModal({
           )}
 
           {/* TAB 2: Term Dates */}
-          {activeTab === "dates" && (
+          {canManageGlobalSettings && activeTab === "dates" && (
             <div className="space-y-4 animate-in fade-in duration-150">
               <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-850/40">
                 <div className="flex items-center justify-between">
@@ -561,7 +539,7 @@ export default function SettingsModal({
           )}
 
           {/* TAB 3: Custom Holidays (Staged locally!) */}
-          {activeTab === "holidays" && (
+          {canManageGlobalSettings && activeTab === "holidays" && (
             <div className="space-y-4 animate-in fade-in duration-150">
               <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-850/40">
                 <div className="flex items-center justify-between">
@@ -800,7 +778,7 @@ export default function SettingsModal({
           )}
 
           {/* TAB 5: Danger Zone */}
-          {activeTab === "danger" && (
+          {canEditSection && activeTab === "danger" && (
             <div className="space-y-4 animate-in fade-in duration-150">
               <div className="p-3.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/20">
                 <h4 className="text-xs font-bold text-red-700 dark:text-red-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -856,7 +834,7 @@ export default function SettingsModal({
                 • Click Save Changes to commit
               </span>
             ) : (
-              <span>All section schedules and settings saved to database</span>
+              <span>{hasUnsavedTheme ? "Theme changes are pending" : "No unsaved changes"}</span>
             )}
           </div>
           <div className="flex items-center gap-3">

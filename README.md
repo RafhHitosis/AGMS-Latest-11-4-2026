@@ -61,18 +61,22 @@ server/
 │   └── db.js            # PostgreSQL connection pool & health checks
 ├── controllers/
 │   ├── configController.js      # App title, term dates, sections & schedules
+│   ├── adminController.js       # Teacher accounts and access-key lifecycle
 │   ├── studentController.js     # Student roster management (CRUD & bulk import)
 │   ├── attendanceController.js  # Attendance status tracking and toggle operations
 │   ├── gradeController.js       # Grade scores, column specs & configurations
 │   ├── holidayController.js     # Custom holiday management
-│   └── systemController.js      # System health and complete database reset
+│   └── systemController.js      # System health and guarded data reset
 ├── db/
-│   ├── schema.sql       # Relational DDL schema with constraints & indexes
-│   ├── initDb.js        # Automatic schema initialization
-│   └── resetDb.js       # Complete database wipe and clean re-initialization
+│   ├── schema.sql       # Idempotent baseline schema
+│   ├── migrations/      # Versioned database changes
+│   ├── initDb.js        # Baseline schema and migrations
+│   ├── backupDb.js      # Manual pg_dump backup
+│   ├── restoreDb.js     # Confirmed pg_restore
+│   └── resetDb.js       # Guarded application-data reset
 ├── middleware/
 │   ├── errorHandler.js  # Centralized error handling
-│   └── requestLogger.js # Colorized API request logging
+│   └── requireAuth.js   # Session and administrator authorization
 ├── routes/
 │   ├── configRoutes.js
 │   ├── studentRoutes.js
@@ -94,7 +98,13 @@ server/
 - **`grade_configs`**: Grading weights, transmutation ratings, and quiz column definitions per section & term.
 - **`grades`**: Student raw scores (PE, ME, +, –, quizzes, RT, AT override, remarks) per section & term.
 - **`section_archives`**: Deleted section data retained for 30 days and available for restoration.
-- **`holidays`**: Custom school and local holidays.
+- **`holidays`**: Custom school and local holidays, private to each workspace.
+- **`auth_sessions`** and **`auth_login_attempts`**: Server-side login sessions and throttling state.
+- **`app_users`**: Administrator and teacher identities, hashed access keys, and workspace ownership.
+- **`account_security_events`**: Account creation, activation, and key-rotation events only; teacher activity is not logged.
+- **`schema_migrations`**: Applied SQL migration versions.
+
+Every teacher and the administrator have separate private records and settings. Attendance and grade rows are constrained to both the owning workspace and the section of their student. The API also validates dates, supported terms, score values, grading weights, maxima, and quiz definitions before saving.
 
 ---
 
@@ -102,25 +112,37 @@ server/
 
 | Command | Description |
 |---|---|
-| **`start.bat`** or **`run.bat`** | **One-command launcher** on Windows (double-click in Explorer or run in terminal) |
+| **`start.bat`** | **One-command launcher** on Windows (double-click in Explorer or run in terminal) |
 | **`npm start`** or **`npm run dev`** | Concurrently runs both the **PostgreSQL API Server** and **Vite Frontend** |
 | **`npm run server`** | Runs only the Express API Server (`http://localhost:5000`) |
 | **`npm run client`** | Runs only the Vite dev server (`http://localhost:5173` or `5174`) |
 | **`npm run build`** | Builds the optimized production bundle |
-| **`npm test`** | Runs section deletion, restore, and naming-rule tests |
+| **`npm test`** | Runs migration, grading, attendance, import, and section workflow tests |
 | **`npm run db:init`** | Initializes database tables |
-| **`npm run db:reset`** | **Completely resets** the database, dropping all tables and recreating clean defaults |
-| **`npm run auth:hash`** | Creates a salted scrypt hash for the app access password (input is hidden) |
+| **`npm run db:backup`** | Manually creates a custom-format PostgreSQL dump in `BACKUP_DIR` (default: `backups`) |
+| **`npm run db:restore -- --file <dump>`** | Manually restores a dump after typing the exact target database name |
+| **`npm run db:reset`** | Resets application data only after `ALLOW_DATABASE_RESET=true` and exact-name confirmation |
 
-## 🔐 App Access Password
+### Database operations and backups
 
-The app requires one shared password before loading its data. The Express API also enforces authentication on every `/api` route, so hiding or changing a frontend URL cannot bypass the gate. Sessions use random, server-side tracked tokens in HttpOnly cookies, expire after 12 hours, and failed login attempts are rate-limited per client IP.
+The server applies numbered migrations before the tenant-aware baseline schema when upgrading an existing database; this ensures workspace columns exist before the new schema indexes are created. A fresh database receives the baseline first. Database connection credentials must come from the environment or `.env`; there is no built-in database password.
+
+Backups are manual only. Install the PostgreSQL client utilities (`pg_dump` and `pg_restore`) and ensure they are on `PATH`, then run `npm run db:backup` before upgrades or other risky operations. The dump contains student, attendance, grade, configuration, and authentication data; keep it in access-controlled storage and outside source control. No automatic backup or cleanup job is configured. If the server uses ephemeral disk storage, move the dump to durable storage immediately.
+
+To restore, run `npm run db:restore -- --file "backups/<backup-file>.dump"` and type the exact database name when prompted. Restore replaces matching database objects; confirm the target carefully and take a fresh backup first.
+
+`npm run db:reset` clears application records and settings for every workspace, then logs out all accounts. It retains accounts, access keys, schema, migration history, and account-security events. The authenticated `/api/system/reset-database` endpoint clears only the signed-in account's workspace and leaves other accounts untouched. Both are disabled unless `ALLOW_DATABASE_RESET=true`; the endpoint also requires `confirmDatabaseName` to match the actual database, and the CLI asks for the same confirmation interactively.
+
+## 🔐 Access-key accounts
+
+Sign-in uses an access key only—there is no username or password. Newly generated keys use the same format in local, test, and production environments: one animal name followed by four random digits, such as `dog0122`. Existing five-part animal keys and supported legacy keys remain valid so current accounts can continue signing in. This short format is easy to share but offers limited protection; do not use it to protect sensitive or real student records on a public deployment. Key IDs are shown to the administrator for account management and are not entered at sign-in. The administrator and teachers use the same app features; the administrator's additional abilities are creating teacher accounts, enabling or disabling accounts, issuing or rotating keys, and permanently deleting teacher accounts and their workspaces. Every account's records and settings belong to its own private workspace. The administrator cannot open or inspect teacher workspaces. Sharing a key shares that account and its workspace. Sessions use random, server-side tracked tokens in HttpOnly cookies, expire after 12 hours, and failed login attempts are rate-limited per client IP.
 
 ### Local setup
 
-1. Generate a password hash with `npm run auth:hash` and enter the chosen password twice when prompted. Use a long, unique password; hashing does not make a weak password stronger.
-2. Put the printed hash in the root `.env` as `AUTH_PASSWORD_HASH=<hash>`. Do not put the plaintext password in `.env`, source code, or a committed file.
-3. Keep `VITE_API_URL` empty for local development so the frontend uses Vite's `/api` proxy. The server creates the authentication tables on startup through `server/db/schema.sql`.
+1. Configure the PostgreSQL connection in `.env`, then run `npm run db:init`. On first initialization, the command prints a one-time administrator access key. Save it securely; the full key cannot be viewed again.
+2. Keep `VITE_API_URL` empty for local development so the frontend uses Vite's `/api` proxy. The server applies database migrations automatically before accepting requests.
+3. Sign in with the administrator key and set up sections. Create teacher accounts from **Teacher access**, then securely share each one-time key with its teacher. Only the key ID is shown in the account list. Disabling an account prevents sign-in but retains its workspace data; rotating a key invalidates the old key and existing sessions.
+4. On administrator sign-in, set two different recovery questions and answers. Answers are normalized and stored as salted scrypt hashes; choose answers that cannot be guessed from public information. If the administrator key is forgotten, use **Forgot the administrator key?** on the sign-in page and answer both prompts to rotate the key. Recovery attempts are limited per IP and per administrator account; the old key and all admin sessions are invalidated, and the replacement key is shown once. If recovery was not configured or both answers are lost, back up the database and have an authorized database operator clear the administrator's `access_key_id` and `access_key_hash` together, then run `npm run db:init` to issue a new key.
 
 ### Hosted setup
 
@@ -130,33 +152,13 @@ In Netlify, set the build command to `npm run build` and the publish directory t
 
 Set these backend environment variables in Render:
 
-- `AUTH_PASSWORD_HASH`: a scrypt hash generated with `npm run auth:hash` (the hash from local `.env` can also be reused).
 - `CLIENT_URL=https://pagms.netlify.app`: the exact hosted frontend origin (no trailing slash or path).
 - `NODE_ENV=production`: enables Secure session cookies.
 - `TRUST_PROXY_HOPS=1`: configure this only when the API is behind one trusted reverse proxy, such as Render.
+- `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`: use the database provider's connection values; no password fallback is provided.
 
-The Render service must use the same Neon PostgreSQL database for every request. In Render, configure the database connection variables (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`) from the Neon connection details. The access key is shared, but each browser signs in separately and receives its own 12-hour session.
+The Render service must use the same Neon PostgreSQL database for every request. In Render, configure the database connection variables (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`) from the Neon connection details. Each account signs in with its own key and receives a separate 12-hour session.
 
 If the Render service URL changes, update the `/api/*` redirect target in `netlify.toml` to the new HTTPS origin and redeploy Netlify.
 
-The backend runs `CREATE TABLE IF NOT EXISTS` for the same authentication schema at startup. If applying database changes manually first, execute:
-
-```sql
-CREATE TABLE IF NOT EXISTS auth_sessions (
-    token_hash CHAR(64) PRIMARY KEY,
-    expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth_sessions (expires_at);
-
-CREATE TABLE IF NOT EXISTS auth_login_attempts (
-    ip_hash CHAR(64) PRIMARY KEY,
-    attempts INTEGER NOT NULL DEFAULT 0,
-    window_started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    locked_until TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS idx_auth_login_attempts_window_started_at
-    ON auth_login_attempts (window_started_at);
-```
-
-Never deploy with the short password shared during setup; it is not strong enough for a public app. Choose a long, unique random password before exposing the app.
+The initial administrator key is issued by running `npm run db:init` against the production database and is printed once. Do not place access keys in source control or public logs.

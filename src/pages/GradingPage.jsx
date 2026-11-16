@@ -1,9 +1,6 @@
 import React, { useState, useMemo } from "react";
+import clsx from "clsx";
 import {
-  ArrowLeft,
-  ArrowRight,
-  FileSpreadsheet,
-  Settings,
   LogOut,
   Users,
   RotateCcw,
@@ -11,15 +8,14 @@ import {
   TableProperties,
   Edit3,
   Award,
-  TrendingUp,
-  Percent,
   Sparkles,
   HelpCircle,
-  Calendar,
   GraduationCap,
   BookOpen,
   School,
   CheckSquare,
+  RefreshCw,
+  BarChart2,
 } from "lucide-react";
 import useGrades from "../hooks/useGrades";
 import useSettings from "../hooks/useSettings";
@@ -33,31 +29,46 @@ import ConfirmModal from "../components/ConfirmModal";
 import InputModal from "../components/InputModal";
 import SmartPerformanceRibbon from "../components/SmartPerformanceRibbon";
 import SmartGradeAnalyticsModal from "../components/SmartGradeAnalyticsModal";
+import ReadModeToggle from "../components/ReadModeToggle";
+import AddQuizItemControl from "../components/AddQuizItemControl";
+import EquivalenceScaleModal from "../components/EquivalenceScaleModal";
+import SectionPageHeader, { SectionTermToggle } from "../components/SectionPageHeader";
 import { exportGradesToExcel, exportSemestralGradesToExcel } from "../utils/gradeExportUtils";
 import { analyzeTermGrades, analyzeSemestralGrades } from "../utils/gradeAnalytics";
 
-export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, onSignOut, appConfig: propAppConfig }) {
-  const { appConfig: hookAppConfig } = useSettings();
+export default function GradingPage({ sectionId, currentUser, onBack, onSwitchToAttendance, onSwitchToAssessments, onSignOut, appConfig: propAppConfig }) {
+  const {
+    appConfig: hookAppConfig,
+    termDates,
+    loading: settingsLoading,
+    error: settingsError,
+    refreshConfig,
+  } = useSettings();
   const appConfig = propAppConfig || hookAppConfig;
+  const canEditSection = currentUser?.role === "admin" || currentUser?.role === "teacher";
   const [term, setTerm] = useState("midterm");
   const [activeSheet, setActiveSheet] = useState("master"); // 'master' | 'input' | 'semestral'
-  const [isReadMode, setIsReadMode] = useState(false);
+  const [isReadMode, setIsReadMode] = useState(!canEditSection);
 
   const {
     students,
     config,
     grades,
     loading,
+    error,
+    saving,
+    saveError,
+    configSaveStatus,
+    configSaveError,
     computedRows,
     semestralRows,
-    stats,
     updateScore,
     updateQuizScore,
     updateConfig,
+    retryFailedSaves,
+    retryConfigSave,
     updatePeMax,
     updateMeMax,
-    updatePlusMax,
-    updateMinusMax,
     updateQuizItemMax,
     updateRtMax,
     updateAtMax,
@@ -67,25 +78,57 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, o
     batchAddStudents,
     resetTermGrades,
     syncAttendanceFromTracker,
-  } = useGrades(sectionId, term);
+    refreshData,
+  } = useGrades(sectionId, term, termDates);
+  const pageError = settingsError || error;
+  const pageLoading = settingsLoading || loading;
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
+  const [isEquivalenceScaleOpen, setIsEquivalenceScaleOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState("ALL");
   const [resetConfirmModal, setResetConfirmModal] = useState({
     isOpen: false,
     title: "",
     message: "",
   });
+  const [isSyncConfirmOpen, setIsSyncConfirmOpen] = useState(false);
+  const [isSyncingAttendance, setIsSyncingAttendance] = useState(false);
 
   // Smart Analytics Computations (100% deterministic, zero paid API or AI)
   const termAnalytics = useMemo(() => analyzeTermGrades(computedRows), [computedRows]);
   const semestralAnalytics = useMemo(() => analyzeSemestralGrades(semestralRows), [semestralRows]);
 
   const currentAnalytics = activeSheet === "semestral" ? semestralAnalytics : termAnalytics;
+  const hasSaveError = Boolean(saveError) || configSaveStatus === "error";
+  const isSaving = saving || configSaveStatus === "saving";
+  const hasUnsavedChanges = configSaveStatus === "pending";
+  const saveStatus = hasSaveError
+    ? "error"
+    : isSaving
+      ? "saving"
+      : hasUnsavedChanges
+        ? "unsaved"
+        : "saved";
+  const saveErrorDetails = canEditSection ? (
+    <>
+      {saveError && (
+        <button type="button" onClick={retryFailedSaves} className="font-bold underline">
+          Retry grades
+        </button>
+      )}
+      {configSaveStatus === "error" && (
+        <button type="button" onClick={retryConfigSave} className="font-bold underline">
+          Retry settings
+        </button>
+      )}
+    </>
+  ) : (
+    <span className="text-[11px] font-medium text-on-surface-variant">Read-only access</span>
+  );
 
   // Filtered rows for displaying in tables based on active Smart Judgement category
   const filteredComputedRows = useMemo(() => {
@@ -122,7 +165,6 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, o
       exportGradesToExcel({
         sectionId,
         term,
-        students,
         computedRows: termAnalytics.enrichedRows?.length ? termAnalytics.enrichedRows : computedRows,
         config,
       });
@@ -135,6 +177,18 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, o
       title: `Reset ${term === "midterm" ? "Midterm" : "Final"} Grades?`,
       message: `Are you sure you want to clear all grade inputs for Section ${sectionId} in ${term.toUpperCase()}? This cannot be undone.`,
     });
+  };
+
+  const handleConfirmAttendanceSync = async () => {
+    if (isSyncingAttendance) return;
+
+    setIsSyncingAttendance(true);
+    try {
+      await syncAttendanceFromTracker();
+    } finally {
+      setIsSyncingAttendance(false);
+      setIsSyncConfirmOpen(false);
+    }
   };
 
   return (
@@ -166,12 +220,12 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, o
       <ImportStudentsModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
-        onImport={(names) => {
-          batchAddStudents(names);
-          setIsImportModalOpen(false);
+        onImport={async (names) => {
+          await batchAddStudents(names);
         }}
         sectionId={sectionId}
         appConfig={appConfig}
+        existingNames={students.map((student) => student.name)}
       />
 
       <InputModal
@@ -197,289 +251,269 @@ export default function GradingPage({ sectionId, onBack, onSwitchToAttendance, o
         onCancel={() => setResetConfirmModal({ isOpen: false, title: "", message: "" })}
       />
 
-      {/* Main Top Header */}
-      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2.5 flex items-center justify-between shadow-xs sticky top-0 z-30">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
-            title="Back to Section Selection"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="flex items-center gap-3">
-            <div className="bg-emerald-600 text-white p-2 rounded-xl shadow-sm w-9 h-9 flex items-center justify-center overflow-hidden shrink-0">
-              {appConfig?.logo && (appConfig.logo.startsWith("data:") || appConfig.logo.startsWith("http") || appConfig.logo.startsWith("/")) ? (
-                <img src={appConfig.logo} alt="Logo" className="w-5 h-5 object-contain rounded" />
-              ) : appConfig?.logo === "GraduationCap" ? (
-                <GraduationCap className="w-5 h-5 text-white" />
-              ) : appConfig?.logo === "Award" ? (
-                <Award className="w-5 h-5 text-white" />
-              ) : appConfig?.logo === "BookOpen" ? (
-                <BookOpen className="w-5 h-5 text-white" />
-              ) : appConfig?.logo === "School" ? (
-                <School className="w-5 h-5 text-white" />
-              ) : appConfig?.logo === "Sparkles" ? (
-                <Sparkles className="w-5 h-5 text-white" />
-              ) : appConfig?.logo === "CheckSquare" ? (
-                <CheckSquare className="w-5 h-5 text-white" />
-              ) : (
-                <Award className="w-5 h-5 text-white" />
-              )}
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-base font-black text-slate-800 dark:text-slate-100 tracking-tight leading-tight">
-                    Section {sectionId}
-                  </h1>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-extrabold uppercase border border-blue-200 dark:border-blue-800">
-                    Grading
-                  </span>
-                </div>
-                {appConfig?.title && (
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate max-w-[140px] sm:max-w-xs">
-                    {appConfig.title}
-                  </p>
-                )}
-              </div>
-
-              {/* Solo Switch to Attendance Button */}
-              {onSwitchToAttendance && (
-                <button
-                  type="button"
-                  onClick={onSwitchToAttendance}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-all cursor-pointer shadow-2xs hover:shadow-xs group ml-1"
-                  title={`Switch directly to Attendance for Section ${sectionId}`}
-                >
-                  <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
-                  <span className="hidden sm:inline">Go to Attendance</span>
-                  <span className="sm:hidden">Attendance</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-emerald-500 group-hover:translate-x-0.5 transition-transform" />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Term Tabs Switcher */}
-        <div role="group" aria-label="Grading term" className="flex items-center gap-1 rounded-xl border border-slate-300 bg-slate-200 p-1 dark:border-slate-700 dark:bg-slate-800">
-          {activeSheet === "semestral" ? (
-            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-xs border border-slate-200 dark:border-slate-700">
-              Semestral (Midterm 50% + Final 50%)
-            </span>
-          ) : (
-            <>
-              <button
-                type="button"
-                aria-pressed={term === "midterm"}
-                onClick={() => handleTermChange("midterm")}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  term === "midterm"
-                    ? "bg-emerald-700 text-white shadow-sm ring-1 ring-emerald-800 dark:bg-emerald-500 dark:text-slate-950 dark:ring-emerald-400"
-                    : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white"
-                }`}
-              >
-                Midterm
-              </button>
-              <button
-                type="button"
-                aria-pressed={term === "finals"}
-                onClick={() => handleTermChange("finals")}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  term === "finals"
-                    ? "bg-emerald-700 text-white shadow-sm ring-1 ring-emerald-800 dark:bg-emerald-500 dark:text-slate-950 dark:ring-emerald-400"
-                    : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white"
-                }`}
-              >
-                Finals
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsAddStudentModalOpen(true)}
-            className="flex items-center gap-1.5 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-bold hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors cursor-pointer shadow-2xs"
-          >
-            <Plus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span className="hidden sm:inline">Add Student</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsImportModalOpen(true)}
-            className="flex items-center gap-1.5 text-xs bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer shadow-2xs"
-          >
-            <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span className="hidden sm:inline">Import</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleExport}
-            disabled={computedRows.length === 0 && semestralRows.length === 0}
-            className="flex items-center gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-bold transition-colors shadow-2xs disabled:opacity-50 cursor-pointer"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Export</span>
-          </button>
-          <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
-          <button
-            type="button"
-            onClick={() => setIsGuideModalOpen(true)}
-            className="p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-emerald-600 rounded-lg transition-colors cursor-pointer"
-            title="Grade Computation Guide"
-          >
-            <HelpCircle className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsConfigModalOpen(true)}
-            className="p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
-            title="Grading Configuration (Weights & Scales)"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleResetRequest}
-            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
-            title="Reset Grades"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
-            title="Sign out"
-            aria-label="Sign out"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
-
-      {/* Class Statistics Ribbon */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 dark:text-slate-500 font-medium">Class Avg:</span>
-            <span className="font-extrabold text-slate-800 dark:text-slate-200">
-              {currentAnalytics.average > 0 ? currentAnalytics.average.toFixed(2) : "-"}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 dark:text-slate-500 font-medium">Passing Rate:</span>
-            <span className="font-extrabold text-blue-700 dark:text-blue-400">
-              {currentAnalytics.gradedStudents > 0
-                ? `${(((currentAnalytics.gradedStudents - (currentAnalytics.counts?.failed || 0)) / currentAnalytics.gradedStudents) * 100).toFixed(1)}%`
-                : "-"}
-            </span>
-            <span className="text-[11px] text-slate-400 dark:text-slate-500">
-              ({Math.max(0, (currentAnalytics.gradedStudents || 0) - (currentAnalytics.counts?.failed || 0))} Passed, {currentAnalytics.counts?.failed || 0} Failed)
-            </span>
-          </div>
-        </div>
-
-        {/* Excel Sheet Navigation Tabs */}
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
-          <button
-            onClick={() => handleSheetChange("master")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
-              activeSheet === "master"
-                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200/80 dark:border-slate-700"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <TableProperties className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-            Main Grade Sheet
-          </button>
-          <button
-            onClick={() => handleSheetChange("input")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
-              activeSheet === "input"
-                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200/80 dark:border-slate-700"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <Edit3 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            Grade Input Ground
-          </button>
-          <button
-            onClick={() => handleSheetChange("semestral")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
-              activeSheet === "semestral"
-                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200/80 dark:border-slate-700"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <Award className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-            Semestral Grade
-          </button>
-        </div>
-      </div>
-
-      {/* Smart Performance & Automatic Best/Lowest Judgement Ribbon */}
-      <SmartPerformanceRibbon
-        analytics={currentAnalytics}
-        activeFilter={activeFilter}
-        onSelectFilter={(filt) => setActiveFilter(filt)}
-        onOpenAnalyticsModal={() => setIsAnalyticsModalOpen(true)}
-        isSemestral={activeSheet === "semestral"}
-        termName={term === "midterm" ? "Midterm" : "Finals"}
+      <ConfirmModal
+        isOpen={isSyncConfirmOpen}
+        title="Sync Attendance to Grades?"
+        message={`This will overwrite the AT score for all ${students.length} students in Section ${sectionId} for ${term === "midterm" ? "Midterm" : "Finals"} using the daily attendance records. Continue?`}
+        isDestructive
+        confirmText={isSyncingAttendance ? "Syncing…" : "Sync Attendance"}
+        isConfirming={isSyncingAttendance}
+        onConfirm={handleConfirmAttendanceSync}
+        onCancel={() => setIsSyncConfirmOpen(false)}
       />
+
+      <EquivalenceScaleModal
+        isOpen={isEquivalenceScaleOpen}
+        onClose={() => setIsEquivalenceScaleOpen(false)}
+      />
+
+      <SectionPageHeader
+        sectionId={sectionId}
+        appConfig={appConfig}
+        onBack={onBack}
+        workspace="Grading"
+        onSwitchWorkspace={(ws) => {
+          if (ws === "attendance" && onSwitchToAttendance) onSwitchToAttendance();
+          if (ws === "assessments" && onSwitchToAssessments) onSwitchToAssessments();
+        }}
+        saveStatus={saveStatus}
+        saveErrorMessage={saveError || configSaveError}
+        saveDetails={saveErrorDetails}
+        termControl={
+          activeSheet === "semestral" ? (
+            <div className="bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200/90 dark:border-slate-700 flex items-center">
+              <span className="bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm text-xs font-semibold px-3 py-1 rounded-md whitespace-nowrap">
+                <span className="sm:hidden">Semestral</span>
+                <span className="hidden sm:inline">Semestral (Midterm 50% + Final 50%)</span>
+              </span>
+            </div>
+          ) : (
+            <SectionTermToggle term={term} onChange={handleTermChange} />
+          )
+        }
+        addActions={[
+          {
+            label: "Add Student",
+            icon: Plus,
+            onSelect: () => setIsAddStudentModalOpen(true),
+            disabled: !canEditSection || pageLoading || Boolean(pageError),
+          },
+          {
+            label: "Import",
+            icon: Users,
+            onSelect: () => setIsImportModalOpen(true),
+            disabled: !canEditSection || pageLoading || Boolean(pageError),
+          },
+        ]}
+        onExport={handleExport}
+        exportDisabled={pageLoading || Boolean(pageError) || (computedRows.length === 0 && semestralRows.length === 0)}
+        settingsAction={{
+          onClick: () => setIsConfigModalOpen(true),
+          disabled: !canEditSection || pageLoading || Boolean(pageError),
+          title: "Grading Configuration (Weights & Scales)",
+          ariaLabel: "Grading Configuration",
+        }}
+        overflowActions={[
+          { label: "Help", icon: HelpCircle, onSelect: () => setIsGuideModalOpen(true) },
+          ...(canEditSection ? [{ label: "Reset grades", icon: RotateCcw, onSelect: handleResetRequest, disabled: pageLoading || Boolean(pageError), danger: true }] : []),
+          { label: "Sign out", icon: LogOut, onSelect: onSignOut, danger: true },
+        ]}
+        overflowLabel="More grading actions"
+      >
+
+        <SmartPerformanceRibbon
+          analytics={currentAnalytics}
+          isSemestral={activeSheet === "semestral"}
+          semestralRows={filteredSemestralRows}
+        />
+        <div className="flex items-center justify-between gap-3 border-b border-outline-variant/60 bg-surface px-3 py-1.5 dark:bg-surface-container text-xs select-none min-h-[44px]">
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
+            {/* Sheet Mode Segmented Pills */}
+            <div
+              role="tablist"
+              aria-label="Grade sheets"
+              className="inline-flex shrink-0 flex-nowrap items-center gap-0.5 rounded-xl border border-outline-variant/50 bg-surface-container-high/60 p-0.5 dark:border-outline-variant/40 dark:bg-surface-container-high/40 shadow-xs"
+            >
+              {[
+                { id: "master", label: "Main Grade Sheet", icon: TableProperties },
+                { id: "input", label: "Grade Input Ground", icon: Edit3 },
+                { id: "semestral", label: "Semestral Grade", icon: Award },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeSheet === tab.id}
+                    onClick={() => handleSheetChange(tab.id)}
+                    className={clsx(
+                      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-semibold transition-all duration-200 ease-out select-none cursor-pointer",
+                      activeSheet === tab.id
+                        ? "bg-surface text-primary shadow-xs ring-1 ring-outline-variant/50 dark:bg-surface-container dark:text-primary"
+                        : "text-on-surface-variant hover:bg-surface/50 hover:text-on-surface"
+                    )}
+                  >
+                    <Icon className={clsx("h-3.5 w-3.5", activeSheet === tab.id ? "text-primary" : "text-on-surface-variant")} />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Divider */}
+            <div className="hidden md:block h-4 w-px bg-outline-variant/60 shrink-0" aria-hidden="true" />
+
+            {/* Student Performance Filter Segmented Group */}
+            <div
+              role="group"
+              aria-label="Student performance filters"
+              className="inline-flex shrink-0 flex-nowrap items-center gap-0.5 rounded-xl border border-outline-variant/50 bg-surface-container-high/40 p-0.5 dark:border-outline-variant/40 shadow-xs"
+            >
+              {[
+                { id: "ALL", label: "All", count: currentAnalytics.counts?.total || 0 },
+                { id: "BEST", label: "Best", count: currentAnalytics.counts?.best || 0 },
+                { id: "SATISFACTORY", label: "Good", count: currentAnalytics.counts?.satisfactory || 0 },
+                { id: "NEEDS_IMPROVEMENT", label: "Needs Imprv", count: currentAnalytics.counts?.needsImprovement || 0 },
+                { id: "FAILED", label: "Failed", count: currentAnalytics.counts?.failed || 0 },
+              ].map(({ id, label, count }) => {
+                const isActive = activeFilter === id;
+                const activeStyles = id === "FAILED"
+                  ? "border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-300 shadow-xs"
+                  : id === "NEEDS_IMPROVEMENT"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 shadow-xs"
+                    : id === "SATISFACTORY"
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 shadow-xs"
+                      : id === "BEST"
+                        ? "border-primary/40 bg-primary/10 text-primary shadow-xs"
+                        : "border-outline-variant/60 bg-surface text-on-surface shadow-xs dark:bg-surface-container";
+
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => setActiveFilter(isActive && id !== "ALL" ? "ALL" : id)}
+                    className={clsx(
+                      "whitespace-nowrap rounded-lg border px-2 py-1 text-xs font-semibold transition-all duration-200 ease-out select-none cursor-pointer",
+                      isActive
+                        ? activeStyles
+                        : "border-transparent text-on-surface-variant hover:bg-surface/60 hover:text-on-surface",
+                      count === 0 && !isActive && "opacity-50 hover:opacity-100"
+                    )}
+                    title={`Filter to ${label === "All" ? "all" : label.toLowerCase()} students`}
+                  >
+                    {label} <span className="font-mono text-[11px] opacity-75">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Action Buttons Right Group */}
+          <div className="flex shrink-0 items-center gap-1.5 ml-auto">
+            {activeSheet === "input" && canEditSection && (
+              <AddQuizItemControl onAddQuizItem={addQuizItem} readMode={isReadMode} />
+            )}
+            {activeSheet === "semestral" && (
+              <button
+                type="button"
+                onClick={() => setIsEquivalenceScaleOpen(true)}
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-outline-variant/60 bg-surface px-2.5 py-1 text-xs font-semibold text-on-surface shadow-xs transition-colors hover:bg-surface-container-high dark:bg-surface-container cursor-pointer select-none"
+                title="View Official 50–100 to 1.00–5.00 Equivalence Scale"
+              >
+                <Award className="h-3.5 w-3.5 text-primary" />
+                <span>Equivalence Scale</span>
+              </button>
+            )}
+            {activeSheet === "master" && canEditSection && (
+              <button
+                type="button"
+                onClick={() => setIsSyncConfirmOpen(true)}
+                disabled={isReadMode}
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-outline-variant/60 bg-surface px-2.5 py-1 text-xs font-semibold text-on-surface shadow-xs transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50 dark:bg-surface-container cursor-pointer select-none"
+                title={isReadMode ? "Turn off read mode to sync attendance" : "Copy present days from daily attendance logs into AT for this section"}
+              >
+                <RefreshCw className="h-3.5 w-3.5 text-primary" />
+                <span>Sync Attendance</span>
+              </button>
+            )}
+            {canEditSection && (
+              <ReadModeToggle enabled={isReadMode} onToggle={() => setIsReadMode((enabled) => !enabled)} />
+            )}
+            {currentAnalytics.totalStudents > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsAnalyticsModalOpen(true)}
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-outline-variant/60 bg-surface px-2.5 py-1 text-xs font-semibold text-on-surface shadow-xs transition-colors hover:bg-surface-container-high dark:bg-surface-container cursor-pointer select-none"
+                title="Open Section Grade Insights"
+              >
+                <BarChart2 className="h-3.5 w-3.5 text-primary" />
+                <span>Insights</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </SectionPageHeader>
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-hidden flex flex-col p-2 md:p-3">
         <div className="flex-1 bg-white dark:bg-slate-900 rounded-xl shadow-xs border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden relative">
-          {loading ? (
+          {pageError ? (
+            <div className="flex flex-1 items-center justify-center p-4">
+              <div className="max-w-xl rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 p-6 text-center text-red-800 dark:text-red-200" role="alert">
+                <h2 className="text-base font-bold">Section data could not be loaded</h2>
+                <p className="mt-2 text-sm">
+                  {settingsError
+                    ? `Application settings: ${settingsError.message || "Unable to load settings."}`
+                    : `Grade data: ${error.message || "Unable to load grade data."}`}
+                </p>
+                <button
+                  type="button"
+                  onClick={settingsError ? refreshConfig : refreshData}
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Retry loading
+                </button>
+              </div>
+            </div>
+          ) : pageLoading ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
             </div>
           ) : activeSheet === "master" ? (
             <GradeMasterTable
               computedRows={filteredComputedRows}
+              totalStudents={students.length}
               config={config}
               grades={grades}
               onUpdateScore={updateScore}
               onUpdateRtMax={updateRtMax}
               onUpdateAtMax={updateAtMax}
-              onSyncAttendance={syncAttendanceFromTracker}
               activeFilter={activeFilter}
-              onClearFilter={() => setActiveFilter("ALL")}
               readMode={isReadMode}
-              onToggleReadMode={() => setIsReadMode((enabled) => !enabled)}
             />
           ) : activeSheet === "input" ? (
             <GradeInputGround
-              students={students}
               computedRows={filteredComputedRows}
+              totalStudents={students.length}
               config={config}
               grades={grades}
               onUpdateScore={updateScore}
               onUpdateQuizScore={updateQuizScore}
               onUpdatePeMax={updatePeMax}
               onUpdateMeMax={updateMeMax}
-              onUpdatePlusMax={updatePlusMax}
-              onUpdateMinusMax={updateMinusMax}
               onUpdateQuizItemMax={updateQuizItemMax}
-              onAddQuizItem={addQuizItem}
-              onRemoveQuizItem={removeQuizItem}
+              onRemoveQuizItem={canEditSection ? removeQuizItem : undefined}
               activeFilter={activeFilter}
-              onClearFilter={() => setActiveFilter("ALL")}
               readMode={isReadMode}
-              onToggleReadMode={() => setIsReadMode((enabled) => !enabled)}
             />
           ) : (
             <SemestralGradeTable
               semestralRows={filteredSemestralRows}
               activeFilter={activeFilter}
-              onClearFilter={() => setActiveFilter("ALL")}
               readMode={isReadMode}
-              onToggleReadMode={() => setIsReadMode((enabled) => !enabled)}
             />
           )}
         </div>

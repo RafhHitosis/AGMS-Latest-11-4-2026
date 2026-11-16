@@ -1,15 +1,13 @@
-import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { format } from "date-fns";
 
 export const exportGradesToExcel = async ({
   sectionId,
   term = "midterm",
-  students = [],
   computedRows = [],
   config = {},
-  headerInfo = {},
 }) => {
+  const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const termTitle = term === "midterm" ? "Midterm" : "Final";
   const csTitle = term === "midterm" ? "CS Mid" : "CS Fin";
@@ -473,6 +471,7 @@ export const exportSemestralGradesToExcel = async ({
   sectionId,
   semestralRows = [],
 }) => {
+  const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const ws = workbook.addWorksheet("Semestral Grade", {
     views: [{ showGridLines: true }],

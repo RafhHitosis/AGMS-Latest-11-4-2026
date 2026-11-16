@@ -989,7 +989,7 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
                     type="text"
                     value={localConfig.title}
                     onChange={handleTitleChange}
-                    placeholder="e.g. Attendance & Grading System"
+                    placeholder="e.g. AGMS"
                     className="w-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg px-3.5 py-2.5 font-bold text-base text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
                   />
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -1004,7 +1004,7 @@ export default function ConfigModal({ isOpen, onClose, config, onSave }) {
                   <input
                     type="text"
                     value={localConfig.subtitle !== undefined ? localConfig.subtitle : ""}
-                    placeholder="e.g. Choose a year level and section to manage records"
+                    placeholder="Choose a year level and section to manage attendance and grades"
                     onChange={handleSubtitleChange}
                     className="w-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg px-3.5 py-2.5 font-medium text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
                   />

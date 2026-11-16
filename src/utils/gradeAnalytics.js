@@ -213,8 +213,6 @@ export const analyzeTermGrades = (computedRows = []) => {
     const isLowest = hasDistinctLowest && Math.abs(grade - lowestGrade) < 0.001;
 
     // Component analysis to generate smart diagnostic reasoning
-    const mep = typeof row.mep === "number" ? row.mep : 0;
-    const cs = typeof row.cs === "number" ? row.cs : 0;
     const isMepLow = row.mer !== "" && Number(row.mer) < 75;
     const isCsLow = row.cs !== "" && Number(row.cs) < 45; // 45 out of 60 is 75%
 

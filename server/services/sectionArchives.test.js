@@ -56,7 +56,7 @@ test("restores archived records and section configuration in one transaction", a
     activeSections: { "2nd Year": ["201"] },
   });
 
-  const result = await restoreSectionArchive(client, "archive-id");
+  const result = await restoreSectionArchive(client, "workspace-1", "archive-id");
 
   assert.deepEqual(result, {
     sectionId: "101",
@@ -90,7 +90,7 @@ test("does not restore an archive into a section name that is already active", a
   });
 
   await assert.rejects(
-    restoreSectionArchive(client, "archive-id"),
+    restoreSectionArchive(client, "workspace-1", "archive-id"),
     { statusCode: 409 },
   );
   assert.equal(client.calls.at(-1).sql, "ROLLBACK");
@@ -102,7 +102,7 @@ test("rolls back restored records when a later insert fails", async () => {
   client.failOn = "INSERT INTO grades";
 
   await assert.rejects(
-    restoreSectionArchive(client, "archive-id"),
+    restoreSectionArchive(client, "workspace-1", "archive-id"),
     /Database failure/,
   );
   assert.equal(client.calls.at(-1).sql, "ROLLBACK");

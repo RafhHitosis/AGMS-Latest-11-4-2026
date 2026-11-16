@@ -1,5 +1,5 @@
 import React from "react";
-import { X, Calendar, FileSpreadsheet, ArrowRight, CheckCircle2, GraduationCap } from "lucide-react";
+import { X, Calendar, FileSpreadsheet, ArrowRight, FileCheck2 } from "lucide-react";
 
 export default function ToolSelectionModal({
   isOpen,
@@ -11,7 +11,7 @@ export default function ToolSelectionModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-850/50">
           <div>
@@ -31,7 +31,7 @@ export default function ToolSelectionModal({
         </div>
 
         {/* Options Grid */}
-        <div className="p-6 grid sm:grid-cols-2 gap-4">
+        <div className="p-6 grid md:grid-cols-3 gap-4">
           {/* Tool 1: Attendance */}
           <button
             onClick={() => {
@@ -74,6 +74,29 @@ export default function ToolSelectionModal({
             </p>
             <div className="mt-4 pt-3 border-t border-sky-100/80 dark:border-sky-900/60 flex items-center justify-between text-xs font-bold text-sky-700 dark:text-sky-400 group-hover:translate-x-0.5 transition-transform">
               <span>Open Grading</span>
+              <ArrowRight className="w-4 h-4" />
+            </div>
+          </button>
+
+          {/* Tool 3: Assessment Maker */}
+          <button
+            onClick={() => {
+              onSelectTool(sectionId, "assessments");
+              onClose();
+            }}
+            className="flex flex-col text-left p-5 rounded-2xl border-2 border-violet-100 dark:border-violet-900/60 bg-violet-50/30 dark:bg-violet-950/30 hover:border-violet-500 dark:hover:border-violet-500 hover:bg-violet-50/70 dark:hover:bg-violet-900/40 hover:shadow-md transition-all group cursor-pointer relative"
+          >
+            <div className="w-12 h-12 rounded-xl bg-violet-600 text-white flex items-center justify-center mb-4 group-hover:scale-105 transition-transform shadow-xs">
+              <FileCheck2 className="w-6 h-6" />
+            </div>
+            <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-violet-700 dark:group-hover:text-violet-400 transition-colors">
+              Assessment Maker
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed flex-1">
+              Build printable exams/quizzes, publish online links with anti-cheat monitoring, and run oral recitations.
+            </p>
+            <div className="mt-4 pt-3 border-t border-violet-100/80 dark:border-violet-900/60 flex items-center justify-between text-xs font-bold text-violet-700 dark:text-violet-400 group-hover:translate-x-0.5 transition-transform">
+              <span>Open Assessments</span>
               <ArrowRight className="w-4 h-4" />
             </div>
           </button>

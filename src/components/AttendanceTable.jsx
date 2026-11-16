@@ -1,9 +1,10 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
-import { format, isSameDay, isToday, isSunday, isSaturday } from "date-fns";
+import { format, isToday, isSunday, isSaturday } from "date-fns";
 import { groupDatesByMonth, chunkDates } from "../utils/dateUtils";
 import { isDateHoliday } from "../utils/holidays";
 import clsx from "clsx";
 import { Plus, User, Trash2, MoreVertical, Edit } from "lucide-react";
+import { useToast } from "../context/ToastContext";
 
 export default function AttendanceTable({
   dates,
@@ -16,11 +17,14 @@ export default function AttendanceTable({
   stats,
   sectionId,
   customHolidays,
-  totalSchoolDays,
-  schedules, // NEW PROP
+  schedules,
+  addStudentInputRef,
 }) {
   const [newStudentName, setNewStudentName] = useState("");
+  const [isAddingStudent, setIsAddingStudent] = useState(false);
   const hoverStatusRef = useRef(null); // Ref for status bar
+  const scrollContainerRef = useRef(null);
+  const toast = useToast();
 
   // Pre-process columns
   const monthGroups = useMemo(() => groupDatesByMonth(dates), [dates]);
@@ -69,11 +73,19 @@ export default function AttendanceTable({
     return meta;
   }, [dates, schedules, sectionId, customHolidays]);
 
-  const handleSubmitStudent = (e) => {
+  const handleSubmitStudent = async (e) => {
     e.preventDefault();
-    if (newStudentName.trim()) {
-      addStudent(newStudentName.trim());
+    const name = newStudentName.trim();
+    if (!name || isAddingStudent) return;
+
+    setIsAddingStudent(true);
+    try {
+      await addStudent(name);
       setNewStudentName("");
+    } catch (err) {
+      toast.error(err.message || "Failed to add student.");
+    } finally {
+      setIsAddingStudent(false);
     }
   };
 
@@ -85,42 +97,43 @@ export default function AttendanceTable({
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col bg-slate-50 dark:bg-slate-950 relative">
-      <div className="flex-1 overflow-auto relative shadow-inner">
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto relative shadow-inner">
         <table className="min-w-full border-collapse border-spacing-0 bg-white dark:bg-slate-900 text-sm">
           {/* Calendar Header */}
-          <thead className="sticky top-0 z-20 shadow-sm font-semibold">
+          <thead className="sticky top-0 z-30 shadow-sm font-semibold">
             {/* Row 1: Months */}
             <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100">
-              <th className="sticky left-0 top-0 z-30 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 w-12 min-w-[3rem] p-0 text-center h-[34px] font-bold">
+              <th className="sticky left-0 top-0 z-40 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 w-12 min-w-[3rem] p-0 text-center h-[34px] font-bold">
                 NoS
               </th>
-              <th className="sticky left-12 top-0 z-30 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 min-w-[200px] text-left px-4 h-[34px] font-bold">
+              <th className="sticky left-12 top-0 z-40 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 min-w-[220px] text-left px-4 h-[34px] font-bold">
                 NAME
               </th>
               {monthColumns.map((group) => (
                 <th
                   key={group.name}
                   colSpan={group.pairs.length}
-                  className="sticky top-0 z-20 h-[34px] text-center py-2 border border-slate-300 dark:border-slate-700 uppercase tracking-wider text-xs bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-100"
+                  className="sticky top-0 z-30 h-[34px] text-center py-2 border border-slate-300 dark:border-slate-700 uppercase tracking-wider text-xs bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-100"
                 >
                   {group.name}
                 </th>
               ))}
-              <th className="sticky right-0 top-0 z-30 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 w-24 p-2 text-center text-xs font-bold text-slate-800 dark:text-slate-100 h-[34px]">
+              <th className="sticky right-0 top-0 z-40 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 w-24 p-2 text-center text-xs font-bold text-slate-800 dark:text-slate-100 h-[34px]">
                 AT
               </th>
             </tr>
 
             {/* Row 2: Date Pairs */}
             <tr className="bg-slate-50 dark:bg-slate-850 text-slate-700 dark:text-slate-200">
-              <th className="sticky left-0 top-[34px] z-30 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 text-center align-middle">
+              <th className="sticky left-0 top-[34px] z-40 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 text-center align-middle">
                 <span className="text-[13px] font-bold text-slate-400 dark:text-slate-400">
                   {students.length}
                 </span>
               </th>
-              <th className="sticky left-12 top-[34px] z-30 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 p-2">
+              <th className="sticky left-12 top-[34px] z-40 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 p-2">
                 <form onSubmit={handleSubmitStudent} className="flex gap-2">
                   <input
+                    ref={addStudentInputRef}
                     type="text"
                     placeholder="Add student..."
                     className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -129,9 +142,10 @@ export default function AttendanceTable({
                   />
                   <button
                     type="submit"
+                    disabled={isAddingStudent}
                     aria-label="Add student"
                     title="Add student"
-                    className="flex shrink-0 items-center justify-center rounded bg-emerald-600 p-1.5 text-white hover:bg-emerald-700 cursor-pointer"
+                    className="flex shrink-0 items-center justify-center rounded bg-emerald-600 p-1.5 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5 text-white" strokeWidth={3} />
                   </button>
@@ -145,23 +159,26 @@ export default function AttendanceTable({
 
                   const status1 = key1 ? (dateMetadata[key1] || { isBlocked: false }) : { isBlocked: false };
                   const status2 = key2 ? (dateMetadata[key2] || { isBlocked: false }) : { isBlocked: false };
+                  const isPairDay1Today = isToday(pair[0]);
+                  const isPairDay2Today = pair[1] ? isToday(pair[1]) : false;
 
                   return (
                     <th
                       key={`${group.name}-${idx}`}
-                      className="sticky top-[34px] z-20 border border-slate-200 dark:border-slate-700 min-w-[3rem] p-0 align-top bg-white dark:bg-slate-900"
+                      className="sticky top-[34px] z-30 border border-slate-200 dark:border-slate-700 min-w-[3rem] p-0 align-top bg-white dark:bg-slate-900"
                     >
                       <div className="flex flex-col h-full">
                         {/* Day 1 */}
                         <div
                           className={clsx(
                             "flex-1 flex items-center justify-center py-1 border-b border-slate-200 dark:border-slate-700 text-xs",
-                            isToday(pair[0]) &&
-                              "bg-emerald-600 text-white font-bold",
-                            status1.isHoliday && "bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300",
-                            status1.isBlocked &&
+                            isPairDay1Today
+                              ? "bg-primary text-on-primary font-bold"
+                              : status1.isHoliday && "bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300",
+                            !isPairDay1Today &&
+                              status1.isBlocked &&
                               !status1.isHoliday &&
-                              "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
+                              "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300",
                           )}
                           title={`${format(pair[0], "EEEE")}${status1.reason ? ` - ${status1.reason}` : ""}`}
                         >
@@ -173,12 +190,13 @@ export default function AttendanceTable({
                           <div
                             className={clsx(
                               "flex-1 flex items-center justify-center py-1 text-xs",
-                              isToday(pair[1]) &&
-                                "bg-emerald-600 text-white font-bold",
-                              status2.isHoliday && "bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300",
-                              status2.isBlocked &&
+                              isPairDay2Today
+                                ? "bg-primary text-on-primary font-bold"
+                                : status2.isHoliday && "bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300",
+                              !isPairDay2Today &&
+                                status2.isBlocked &&
                                 !status2.isHoliday &&
-                                "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
+                                "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300",
                             )}
                             title={`${format(pair[1], "EEEE")}${status2.reason ? ` - ${status2.reason}` : ""}`}
                           >
@@ -192,7 +210,7 @@ export default function AttendanceTable({
                   );
                 }),
               )}
-              <th className="sticky right-0 top-[34px] z-30 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 text-[10px] text-slate-500 dark:text-slate-400 p-1">
+              <th className="sticky right-0 top-[34px] z-40 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 text-[10px] text-slate-500 dark:text-slate-400 p-1">
                 <div className="flex flex-col items-center justify-center h-full w-full">
                   <div className="flex-1 w-full flex items-center justify-center border-b border-slate-300 dark:border-slate-700">
                     <span className="text-emerald-700 dark:text-emerald-400 font-bold text-[10px]">
@@ -226,16 +244,13 @@ export default function AttendanceTable({
                 key={student.id}
                 student={student}
                 index={index}
+                scrollContainerRef={scrollContainerRef}
                 stats={stats}
                 attendance={attendance}
                 monthColumns={monthColumns}
-                customHolidays={customHolidays}
-                sectionId={sectionId}
-                totalSchoolDays={totalSchoolDays}
                 toggleAttendance={toggleAttendance}
                 deleteStudent={deleteStudent}
                 editStudent={editStudent}
-                schedules={schedules} 
                 onHover={updateHoverStatus} 
                 dateMetadata={dateMetadata}
               />
@@ -258,7 +273,7 @@ export default function AttendanceTable({
         </div>
 
         {/* Right Sidebar: Meaningful Color Legend */}
-        <div className="flex items-center gap-4 shrink-0 ml-4 font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 px-3.5 py-1 rounded-full border border-slate-200 dark:border-slate-700">
+        <div className="flex max-w-[70vw] items-center gap-4 overflow-x-auto shrink-0 ml-4 font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 px-3.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 md:max-w-none">
           <div className="flex items-center gap-1.5" title="Today's date">
             <div className="w-3 h-3 rounded-[3px] bg-emerald-600 border border-emerald-700"></div>
             <span>Today</span>
@@ -289,16 +304,13 @@ const StudentRow = React.memo(
   ({
     student,
     index,
+    scrollContainerRef,
     stats,
     attendance,
     monthColumns,
-    customHolidays,
-    sectionId,
-    totalSchoolDays,
     toggleAttendance,
     deleteStudent,
     editStudent,
-    schedules, 
     onHover, 
     dateMetadata,
   }) => {
@@ -308,10 +320,12 @@ const StudentRow = React.memo(
     };
 
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [openUpward, setOpenUpward] = useState(false);
     const menuRef = useRef(null);
     const buttonRef = useRef(null);
 
     useEffect(() => {
+      const scrollContainer = scrollContainerRef.current;
       const handleClickOutside = (event) => {
         if (
           menuRef.current &&
@@ -321,14 +335,58 @@ const StudentRow = React.memo(
           setIsMenuOpen(false);
         }
       };
+      const handleScroll = () => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+
+        const stickyHeader = container.querySelector("thead");
+        const headerBottom = stickyHeader
+          ? stickyHeader.getBoundingClientRect().bottom
+          : 0;
+        const containerRect = container.getBoundingClientRect();
+
+        const menu = menuRef.current;
+        const button = buttonRef.current;
+        const menuRect = menu?.getBoundingClientRect();
+        const buttonRect = button?.getBoundingClientRect();
+
+        const topEdge = menuRect
+          ? menuRect.top
+          : buttonRect
+            ? buttonRect.top
+            : 0;
+
+        // Cleanly close before colliding with the "Add student" sticky header
+        if (topEdge <= headerBottom + 4) {
+          setIsMenuOpen(false);
+          return;
+        }
+
+        // Cleanly close if scrolled out of visible table area at the bottom
+        const bottomEdge = menuRect
+          ? menuRect.bottom
+          : buttonRect
+            ? buttonRect.bottom
+            : 0;
+
+        if (bottomEdge >= containerRect.bottom - 4) {
+          setIsMenuOpen(false);
+        }
+      };
 
       if (isMenuOpen) {
         document.addEventListener("mousedown", handleClickOutside);
+        scrollContainer?.addEventListener("scroll", handleScroll, { passive: true });
+        window.addEventListener("scroll", handleScroll, { passive: true });
+        window.addEventListener("resize", handleScroll);
       }
       return () => {
         document.removeEventListener("mousedown", handleClickOutside);
+        scrollContainer?.removeEventListener("scroll", handleScroll);
+        window.removeEventListener("scroll", handleScroll);
+        window.removeEventListener("resize", handleScroll);
       };
-    }, [isMenuOpen]);
+    }, [isMenuOpen, scrollContainerRef]);
 
     const handleMouseEnter = (date) => {
       if (!date) return;
@@ -357,7 +415,7 @@ const StudentRow = React.memo(
       <tr
         className={clsx(
           "hover:bg-slate-50 dark:hover:bg-slate-800/60 group transition-colors",
-          isMenuOpen && "relative z-50"
+          isMenuOpen && "relative z-20"
         )}
       >
         <td className="sticky left-0 z-10 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-center text-xs text-slate-500 dark:text-slate-400 font-mono group-hover:bg-slate-100 dark:group-hover:bg-slate-800 transition-colors">
@@ -365,16 +423,24 @@ const StudentRow = React.memo(
         </td>
         <td
           className={clsx(
-            "sticky left-12 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1 text-sm font-medium text-slate-700 dark:text-slate-200 flex justify-between items-center h-[50px] transition-colors",
-            isMenuOpen ? "z-50" : "z-10"
+            "sticky left-12 min-w-[220px] bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800 border-r border-slate-300 dark:border-slate-700 px-3 py-1 text-[13px] font-semibold text-slate-700 dark:text-slate-200 flex justify-between items-center h-[50px] transition-colors",
+            isMenuOpen ? "z-[25]" : "z-10"
           )}
         >
-          <span className="truncate max-w-[150px]" title={student.name}>{student.name}</span>
+          <span className="truncate max-w-[170px]" title={student.name}>{student.name}</span>
           <div className="relative ml-2 shrink-0">
             <button
               ref={buttonRef}
               onClick={(e) => {
                 e.stopPropagation();
+                if (!isMenuOpen && buttonRef.current && scrollContainerRef.current) {
+                  const btnRect = buttonRef.current.getBoundingClientRect();
+                  const containerRect = scrollContainerRef.current.getBoundingClientRect();
+                  const theadBottom = scrollContainerRef.current.querySelector("thead")?.getBoundingClientRect().bottom || 0;
+                  const spaceBelow = containerRect.bottom - btnRect.bottom;
+                  const spaceAbove = btnRect.top - theadBottom;
+                  setOpenUpward(spaceBelow < 90 && spaceAbove > 90);
+                }
                 setIsMenuOpen(!isMenuOpen);
               }}
               className={clsx(
@@ -391,10 +457,11 @@ const StudentRow = React.memo(
               <div
                 ref={menuRef}
                 className={clsx(
-                  "absolute top-0 z-[9999] w-32 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-in zoom-in-95 duration-200",
+                  "absolute z-30 w-32 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-in zoom-in-95 duration-200",
+                  openUpward ? "bottom-full mb-1 origin-bottom" : "top-0 origin-top",
                   hasFewDates
-                    ? "right-full mr-2 origin-top-right"
-                    : "left-full ml-2 origin-top-left"
+                    ? "right-full mr-2"
+                    : "left-full ml-2"
                 )}
               >
                 <div className="flex flex-col py-1">
@@ -451,7 +518,8 @@ const StudentRow = React.memo(
                   {/* Cell 1 */}
                   <div
                     className={clsx(
-                      "flex-1 cursor-pointer transition-colors border-b border-slate-200 dark:border-slate-700 relative",
+                      "flex-1 transition-colors border-b border-slate-200 dark:border-slate-700 relative",
+                      "cursor-pointer",
                       status1.isBlocked
                         ? "bg-slate-100 dark:bg-slate-800/80 cursor-not-allowed"
                         : isAbs1
@@ -459,14 +527,12 @@ const StudentRow = React.memo(
                           : "hover:bg-emerald-50 dark:hover:bg-emerald-950/40 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/40",
                       status1.isHoliday && "bg-red-100 dark:bg-red-950/60",
                     )}
-                    onClick={() =>
-                      !status1.isBlocked && toggleAttendance(student.id, date1)
-                    }
+                    onClick={() => !status1.isBlocked && toggleAttendance(student.id, date1)}
                     onMouseEnter={() => handleMouseEnter(date1)}
                     onMouseLeave={() => onHover("")}
                     title={title1}
                   >
-                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-slate-800/40 dark:text-slate-200/40 opacity-0 group-hover:opacity-100 pointer-events-none select-none">
+                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-slate-700 dark:text-slate-100 opacity-0 group-hover:opacity-100 pointer-events-none select-none">
                       {format(date1, "d")}
                     </span>
                   </div>
@@ -475,7 +541,8 @@ const StudentRow = React.memo(
                   {date2 ? (
                     <div
                       className={clsx(
-                        "flex-1 cursor-pointer transition-colors relative",
+                        "flex-1 transition-colors relative",
+                        "cursor-pointer",
                         status2.isBlocked
                           ? "bg-slate-100 dark:bg-slate-800/80 cursor-not-allowed"
                           : isAbs2
@@ -483,15 +550,12 @@ const StudentRow = React.memo(
                             : "hover:bg-emerald-50 dark:hover:bg-emerald-950/40 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/40",
                         status2.isHoliday && "bg-red-100 dark:bg-red-950/60",
                       )}
-                      onClick={() =>
-                        !status2.isBlocked &&
-                        toggleAttendance(student.id, date2)
-                      }
+                      onClick={() => !status2.isBlocked && toggleAttendance(student.id, date2)}
                       onMouseEnter={() => handleMouseEnter(date2)}
                       onMouseLeave={() => onHover("")}
                       title={title2}
                     >
-                      <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-slate-800/40 dark:text-slate-200/40 opacity-0 group-hover:opacity-100 pointer-events-none select-none">
+                      <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-slate-700 dark:text-slate-100 opacity-0 group-hover:opacity-100 pointer-events-none select-none">
                         {format(date2, "d")}
                       </span>
                     </div>
@@ -525,8 +589,6 @@ const StudentRow = React.memo(
   (prev, next) => {
     if (prev.student.id !== next.student.id) return false;
     if (prev.student.name !== next.student.name) return false;
-    if (prev.sectionId !== next.sectionId) return false;
-    if (prev.totalSchoolDays !== next.totalSchoolDays) return false;
     if (prev.dateMetadata !== next.dateMetadata) return false;
     if (prev.monthColumns !== next.monthColumns) return false;
     

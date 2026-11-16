@@ -4,12 +4,11 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import apiRoutes from "./routes/index.js";
-import { requestLogger } from "./middleware/requestLogger.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { initializeDatabase } from "./db/initDb.js";
 import { pool } from "./config/db.js";
-import { isValidPasswordHash } from "./auth/password.js";
 import authRoutes from "./routes/authRoutes.js";
+import publicAssessmentRoutes from "./routes/publicAssessmentRoutes.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { isAllowedOrigin } from "./middleware/allowedOrigin.js";
 
@@ -44,15 +43,11 @@ app.use(
     exposedHeaders: ["Retry-After"],
   }),
 );
-app.use(express.json());
-app.use(requestLogger);
+app.use(express.json({ limit: "1mb" }));
 
-if (!isValidPasswordHash(process.env.AUTH_PASSWORD_HASH)) {
-  throw new Error("Set AUTH_PASSWORD_HASH to a valid scrypt hash before starting the server.");
-}
-
-// Authentication is the only public API; all other endpoints require a valid session.
+// Public endpoints (no authentication required)
 app.use("/api/auth", authRoutes);
+app.use("/api/public/assessments", publicAssessmentRoutes);
 app.use("/api", requireAuth);
 app.use("/api", apiRoutes);
 
@@ -72,6 +67,12 @@ const startServer = async () => {
   try {
     // Ensure tables exist on startup
     await initializeDatabase();
+    const administratorKey = await pool.query(
+      "SELECT 1 FROM app_users WHERE role = 'admin' AND is_active AND access_key_hash IS NOT NULL LIMIT 1",
+    );
+    if (administratorKey.rowCount === 0) {
+      throw new Error("Run npm run db:init and securely save the one-time administrator access key before starting the server.");
+    }
     await pool.query("DELETE FROM section_archives WHERE expires_at <= NOW()");
     const archiveCleanupTimer = setInterval(() => {
       pool.query("DELETE FROM section_archives WHERE expires_at <= NOW()")

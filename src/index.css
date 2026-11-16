@@ -30,6 +30,7 @@
   --color-on-error: #ffffff;
   --color-error-container: #ffdad6;
   --color-on-error-container: #410002;
+  --color-warning: #92400e;
 
   --color-surface: #ffffff;
   --color-on-surface: #1e293b;
@@ -65,6 +66,8 @@
   --color-on-tertiary: #052e16;
   --color-tertiary-container: #14532d;
   --color-on-tertiary-container: #bbf7d0;
+  --color-error: #f87171;
+  --color-warning: #fbbf24;
 
   --color-surface: #0f172a; /* Slate 900 base */
   --color-on-surface: #f8fafc; /* Crisp Slate 50 text */

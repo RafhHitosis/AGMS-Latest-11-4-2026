@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "db:init": "node server/db/initDb.js",
     "db:reset": "node server/db/resetDb.js",
-    "auth:hash": "node server/auth/generatePasswordHash.js"
+    "db:backup": "node server/db/backupDb.js",
+    "db:restore": "node server/db/restoreDb.js"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -30,7 +31,6 @@
     "pg": "^8.23.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {

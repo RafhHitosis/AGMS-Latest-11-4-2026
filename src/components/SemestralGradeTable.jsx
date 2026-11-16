@@ -1,32 +1,13 @@
-import React, { useState } from "react";
-import { Award } from "lucide-react";
+import React from "react";
 import clsx from "clsx";
-import EquivalenceScaleModal from "./EquivalenceScaleModal";
-import ReadModeToggle from "./ReadModeToggle";
 import useReadModeCellSelection from "../hooks/useReadModeCellSelection";
 
 export default function SemestralGradeTable({
   semestralRows = [],
   activeFilter = "ALL",
-  onClearFilter,
   readMode = false,
-  onToggleReadMode,
 }) {
-  const [showEquivModal, setShowEquivModal] = useState(false);
   const { containerRef, handleCellClick, handleCellKeyDown } = useReadModeCellSelection(readMode);
-
-  const passedCount = semestralRows.filter(
-    (r) => typeof r.semGrade === "number" && r.semGrade >= 75.0 && r.equivGrade !== "5.00"
-  ).length;
-  const failedCount = semestralRows.filter(
-    (r) => typeof r.semGrade === "number" && (r.semGrade < 75.0 || r.equivGrade === "5.00")
-  ).length;
-  const pendingCount = semestralRows.filter(
-    (r) => typeof r.semGrade !== "number" && r.remarks !== "AW" && r.remarks !== "UW"
-  ).length;
-  const withdrawnCount = semestralRows.filter(
-    (r) => r.remarks === "AW" || r.remarks === "UW"
-  ).length;
 
   return (
     <div
@@ -35,69 +16,6 @@ export default function SemestralGradeTable({
       onKeyDownCapture={handleCellKeyDown}
       className={clsx("grade-sheet-table flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900", readMode && "grade-read-mode")}
     >
-      {/* Equivalence Modal */}
-      <EquivalenceScaleModal
-        isOpen={showEquivModal}
-        onClose={() => setShowEquivModal(false)}
-      />
-
-      {/* Top action / info bar */}
-      <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-800 dark:text-slate-100 text-sm">
-            Final Semestral Summary
-          </span>
-          <span className="text-slate-400 dark:text-slate-500">|</span>
-          <span className="text-slate-500 dark:text-slate-400 font-medium">
-            Read-only • 50% Midterm + 50% Final Term
-          </span>
-          {activeFilter && activeFilter !== "ALL" && (
-            <div className="flex items-center gap-1.5 bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 px-2 py-0.5 rounded-full text-[11px] font-bold border border-amber-300 dark:border-amber-700 ml-2">
-              <span>Filtered: {activeFilter.replace("_", " ")}</span>
-              {onClearFilter && (
-                <button
-                  onClick={onClearFilter}
-                  className="hover:text-red-700 dark:hover:text-red-400 cursor-pointer ml-1 font-black"
-                  title="Clear filter"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <ReadModeToggle enabled={readMode} onToggle={onToggleReadMode} />
-          <button
-            onClick={() => setShowEquivModal(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-300 dark:border-slate-700 font-semibold text-xs cursor-pointer shadow-2xs transition-colors"
-            title="View Official 50–100 to 1.00–5.00 Equivalence Scale"
-          >
-            <Award className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-            Equivalence Scale
-          </button>
-
-          <span className="font-semibold text-slate-500 dark:text-slate-400">
-            Total Students: {semestralRows.length}
-          </span>
-          <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-            Passed: {passedCount}
-          </span>
-          <span className="text-red-600 dark:text-red-400 font-bold">
-            Failed: {failedCount}
-          </span>
-          <span className="font-bold text-slate-500 dark:text-slate-400">
-            Pending: {pendingCount}
-          </span>
-          {withdrawnCount > 0 && (
-            <span className="font-bold text-purple-700 dark:text-purple-300">
-              Withdrawn: {withdrawnCount}
-            </span>
-          )}
-        </div>
-      </div>
-
       {/* Spreadsheet Table strictly matching Image 1 */}
       <div className="flex-1 overflow-auto">
         <table className="w-full border-collapse text-xs select-none">

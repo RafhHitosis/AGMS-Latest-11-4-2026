@@ -1,11 +1,11 @@
-import { query, pool } from "../config/db.js";
+import { query } from "../config/db.js";
 
 export const getStudentsBySection = async (req, res, next) => {
   try {
     const { sectionId } = req.params;
     const result = await query(
-      "SELECT id, section_id, name, created_at FROM students WHERE section_id = $1 ORDER BY name ASC",
-      [sectionId]
+      "SELECT id, section_id, name, created_at FROM students WHERE workspace_id = $1 AND section_id = $2 ORDER BY name ASC",
+      [req.user.id, sectionId]
     );
     res.json(result.rows);
   } catch (err) {
@@ -16,15 +16,15 @@ export const getStudentsBySection = async (req, res, next) => {
 export const addStudent = async (req, res, next) => {
   try {
     const { sectionId } = req.params;
-    const { name } = req.body;
+    const { name } = req.body || {};
 
-    if (!name || !name.trim()) {
-      return res.status(400).json({ error: "Student name is required" });
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 255) {
+      return res.status(400).json({ error: "Student name must contain 1 to 255 characters." });
     }
 
     const result = await query(
-      "INSERT INTO students (section_id, name) VALUES ($1, $2) RETURNING id, section_id, name, created_at",
-      [sectionId, name.trim()]
+      "INSERT INTO students (workspace_id, section_id, name) VALUES ($1, $2, $3) RETURNING id, section_id, name, created_at",
+      [req.user.id, sectionId, name.trim()]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -33,55 +33,60 @@ export const addStudent = async (req, res, next) => {
 };
 
 export const batchAddStudents = async (req, res, next) => {
-  const client = await pool.connect();
   try {
     const { sectionId } = req.params;
-    const { names } = req.body;
+    const { names } = req.body || {};
 
     if (!Array.isArray(names) || names.length === 0) {
       return res.status(400).json({ error: "Names array is required" });
     }
-
-    await client.query("BEGIN");
-    const insertedStudents = [];
-
-    for (const rawName of names) {
-      const name = typeof rawName === "string" ? rawName.trim() : "";
-      if (name) {
-        const resInsert = await client.query(
-          "INSERT INTO students (section_id, name) VALUES ($1, $2) RETURNING id, section_id, name, created_at",
-          [sectionId, name]
-        );
-        insertedStudents.push(resInsert.rows[0]);
-      }
+    if (names.some((name) => typeof name === "string" && name.trim().length > 255)) {
+      return res.status(400).json({ error: "Student names must be no longer than 255 characters." });
     }
 
-    await client.query("COMMIT");
+    const seenNames = new Set();
+    const uniqueNames = [];
+    for (const rawName of names) {
+      const name = typeof rawName === "string" ? rawName.trim() : "";
+      const key = name.toLowerCase();
+      if (name && !seenNames.has(key)) {
+        seenNames.add(key);
+        uniqueNames.push(name);
+      }
+    }
+    if (uniqueNames.length === 0) {
+      return res.status(400).json({ error: "At least one valid student name is required." });
+    }
+
+    const result = await query(
+      `INSERT INTO students (workspace_id, section_id, name)
+       SELECT $1, $2, name
+       FROM UNNEST($3::text[]) WITH ORDINALITY AS roster(name, position)
+       RETURNING id, section_id, name, created_at`,
+      [req.user.id, sectionId, uniqueNames]
+    );
     res.status(201).json({
       success: true,
-      count: insertedStudents.length,
-      students: insertedStudents,
+      count: result.rows.length,
+      students: result.rows,
     });
   } catch (err) {
-    await client.query("ROLLBACK");
     next(err);
-  } finally {
-    client.release();
   }
 };
 
 export const updateStudent = async (req, res, next) => {
   try {
     const { sectionId, id } = req.params;
-    const { name } = req.body;
+    const { name } = req.body || {};
 
-    if (!name || !name.trim()) {
-      return res.status(400).json({ error: "Student name is required" });
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 255) {
+      return res.status(400).json({ error: "Student name must contain 1 to 255 characters." });
     }
 
     const result = await query(
-      "UPDATE students SET name = $1 WHERE id = $2 AND section_id = $3 RETURNING id, section_id, name",
-      [name.trim(), id, sectionId]
+      "UPDATE students SET name = $1 WHERE workspace_id = $2 AND id = $3 AND section_id = $4 RETURNING id, section_id, name",
+      [name.trim(), req.user.id, id, sectionId]
     );
 
     if (result.rows.length === 0) {
@@ -98,8 +103,8 @@ export const deleteStudent = async (req, res, next) => {
   try {
     const { sectionId, id } = req.params;
     const result = await query(
-      "DELETE FROM students WHERE id = $1 AND section_id = $2 RETURNING id",
-      [id, sectionId]
+      "DELETE FROM students WHERE workspace_id = $1 AND id = $2 AND section_id = $3 RETURNING id",
+      [req.user.id, id, sectionId]
     );
 
     if (result.rows.length === 0) {
@@ -115,7 +120,7 @@ export const deleteStudent = async (req, res, next) => {
 export const deleteAllStudentsBySection = async (req, res, next) => {
   try {
     const { sectionId } = req.params;
-    await query("DELETE FROM students WHERE section_id = $1", [sectionId]);
+    await query("DELETE FROM students WHERE workspace_id = $1 AND section_id = $2", [req.user.id, sectionId]);
     res.json({ success: true, message: `All students deleted for section ${sectionId}` });
   } catch (err) {
     next(err);

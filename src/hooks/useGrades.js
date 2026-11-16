@@ -1,21 +1,32 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import api from "../lib/api";
+import { useToast } from "../context/ToastContext";
 import {
   computeStudentGradeRow,
   calculateSemestralGrade,
   getEquivGrade,
   parseStudentNameAndMI,
 } from "../utils/gradeCalculations";
-import { createScoreSaveQueue } from "../utils/scoreSaveQueue";
+import { countAbsencesByStudent, getTermDateRange } from "../../shared/termDates.js";
+import { createKeyedRequestQueue } from "../utils/keyedRequestQueue";
 
-export const useGrades = (sectionId, term = "midterm") => {
+const EMPTY_TERM_DATES = {};
+
+export const useGrades = (sectionId, term = "midterm", termDates = EMPTY_TERM_DATES) => {
+  const toast = useToast();
   const [students, setStudents] = useState([]);
   const [config, setConfig] = useState(null);
   const [grades, setGrades] = useState({});
-  const [absences, setAbsences] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [saveError, setSaveError] = useState(null);
+  const [configSaveStatus, setConfigSaveStatus] = useState("saved");
+  const [configSaveError, setConfigSaveError] = useState(null);
+  const attendancePeriod = useMemo(
+    () => getTermDateRange(term, termDates),
+    [term, termDates]
+  );
 
   // Semestral state & caches for Midterm and Finals overviews
   const [semestralScores, setSemestralScores] = useState({});
@@ -23,8 +34,15 @@ export const useGrades = (sectionId, term = "midterm") => {
   const [finalsOverview, setFinalsOverview] = useState({ config: null, grades: {} });
 
   const scoreSaveQueueRef = useRef(null);
+  const pendingScoreSavesRef = useRef(0);
+  const scoreSaveVersionsRef = useRef(new Map());
+  const failedScoreSavesRef = useRef(new Map());
+  const saveConfigTimeoutRef = useRef(null);
+  const configSaveQueueRef = useRef(Promise.resolve());
+  const configSaveVersionRef = useRef(0);
+  const latestConfigRef = useRef(config);
   if (!scoreSaveQueueRef.current) {
-    scoreSaveQueueRef.current = createScoreSaveQueue(
+    scoreSaveQueueRef.current = createKeyedRequestQueue(
       (saveSectionId, saveTerm, studentId, scores) =>
         api.updateStudentScore(saveSectionId, saveTerm, studentId, scores)
     );
@@ -54,9 +72,9 @@ export const useGrades = (sectionId, term = "midterm") => {
       if (requestId !== fetchRequestIdRef.current) return;
       setStudents(currentData.students || []);
       setConfig(currentData.config || {});
+      latestConfigRef.current = currentData.config || {};
       setGrades(currentData.grades || {});
       gradesRef.current = currentData.grades || {};
-      setAbsences(currentData.absences || {});
 
       setSemestralScores(semData?.grades || {});
 
@@ -79,6 +97,44 @@ export const useGrades = (sectionId, term = "midterm") => {
     fetchGradeData();
   }, [fetchGradeData]);
 
+  const saveScoreWithStatus = useCallback(async (key, saveSectionId, saveTerm, studentId, scores) => {
+    const version = (scoreSaveVersionsRef.current.get(key) || 0) + 1;
+    scoreSaveVersionsRef.current.set(key, version);
+    pendingScoreSavesRef.current += 1;
+    setSaving(true);
+
+    try {
+      await scoreSaveQueueRef.current.save(
+        key,
+        saveSectionId,
+        saveTerm,
+        studentId,
+        scores
+      );
+      if (scoreSaveVersionsRef.current.get(key) === version) {
+        failedScoreSavesRef.current.delete(key);
+      }
+    } catch (err) {
+      if (scoreSaveVersionsRef.current.get(key) === version) {
+        failedScoreSavesRef.current.set(key, {
+          sectionId: saveSectionId,
+          term: saveTerm,
+          studentId,
+          scores,
+        });
+        const message = err.message || "Failed to save grade changes.";
+        setSaveError(message);
+        toast.error(message);
+      }
+    } finally {
+      pendingScoreSavesRef.current -= 1;
+      if (pendingScoreSavesRef.current === 0) {
+        setSaving(false);
+        if (failedScoreSavesRef.current.size === 0) setSaveError(null);
+      }
+    }
+  }, [toast]);
+
   // Update a single score field for a student (pe, me, plus, minus, rt, at, remarks)
   const updateScore = useCallback(
     async (studentId, field, value) => {
@@ -96,19 +152,15 @@ export const useGrades = (sectionId, term = "midterm") => {
       }));
 
       // Keep writes for each student and term ordered so an older keystroke cannot overwrite a newer one.
-      try {
-        await scoreSaveQueueRef.current.save(
-          `${sectionId}:${term}:${studentId}`,
-          sectionId,
-          term,
-          studentId,
-          { [field]: value }
-        );
-      } catch (err) {
-        console.error("Failed to save score:", err);
-      }
+      await saveScoreWithStatus(
+        `${sectionId}:${term}:${studentId}`,
+        sectionId,
+        term,
+        studentId,
+        { [field]: value }
+      );
     },
-    [sectionId, term]
+    [sectionId, term, saveScoreWithStatus]
   );
 
   // Update a specific quiz score (HQ1, HQ2, LA1, etc.)
@@ -129,73 +181,141 @@ export const useGrades = (sectionId, term = "midterm") => {
       }));
 
       // Keep quiz writes ordered because each request stores the complete quiz-score map.
-      try {
-        await scoreSaveQueueRef.current.save(
-          `${sectionId}:${term}:${studentId}`,
-          sectionId,
-          term,
-          studentId,
-          { quizzes: nextQuizzes }
-        );
-      } catch (err) {
-        console.error("Failed to save quiz score:", err);
-      }
+      await saveScoreWithStatus(
+        `${sectionId}:${term}:${studentId}`,
+        sectionId,
+        term,
+        studentId,
+        { quizzes: nextQuizzes }
+      );
     },
-    [sectionId, term]
+    [sectionId, term, saveScoreWithStatus]
   );
+
+  const retryFailedSaves = useCallback(async () => {
+    setSaveError(null);
+    const failures = [...failedScoreSavesRef.current.entries()];
+    await Promise.all(
+      failures.map(([key, failed]) =>
+        saveScoreWithStatus(
+          key,
+          failed.sectionId,
+          failed.term,
+          failed.studentId,
+          failed.scores
+        )
+      )
+    );
+  }, [saveScoreWithStatus]);
 
   // Sync attendance present days from the Attendance tracker to `at`
   const syncAttendanceFromTracker = useCallback(async () => {
     if (!config || !students.length) return;
+    if (!attendancePeriod) {
+      toast.error("Set valid start and end dates for this term before syncing attendance.");
+      return;
+    }
+
     const atMax = Math.max(1, Number(config.at_max) || 36);
 
-    const updatedGrades = { ...gradesRef.current };
-    const batchUpdates = {};
+    try {
+      const attendance = await api.getAttendance(
+        sectionId,
+        attendancePeriod.startDate,
+        attendancePeriod.endDate
+      );
+      const absences = countAbsencesByStudent(attendance, attendancePeriod);
+      const updatedGrades = { ...gradesRef.current };
+      const batchUpdates = {};
 
-    students.forEach((std) => {
-      const absencesCount = absences[std.id] || 0;
-      const presentDays = Math.max(0, atMax - absencesCount);
-      const studentScores = { ...(updatedGrades[std.id] || {}), at: presentDays };
-      updatedGrades[std.id] = studentScores;
-      batchUpdates[std.id] = { at: presentDays };
-    });
+      students.forEach((std) => {
+        const absencesCount = absences.get(std.id) || 0;
+        const presentDays = Math.max(0, atMax - absencesCount);
+        const studentScores = { ...(updatedGrades[std.id] || {}), at: presentDays };
+        updatedGrades[std.id] = studentScores;
+        batchUpdates[std.id] = { at: presentDays };
+      });
 
-    gradesRef.current = updatedGrades;
-    setGrades(updatedGrades);
+      await api.batchUpdateScores(sectionId, term, batchUpdates);
+      gradesRef.current = updatedGrades;
+      setGrades(updatedGrades);
+      toast.success("Attendance present-day values synced for this term.");
+    } catch (err) {
+      console.error("Failed to sync attendance:", err);
+      toast.error(err.message || "Failed to sync attendance.");
+    }
+
+  }, [config, students, attendancePeriod, sectionId, term, toast]);
+
+  const saveConfigToServer = useCallback(async (configToSave, version) => {
+    setConfigSaveStatus("saving");
+    const request = configSaveQueueRef.current
+      .catch(() => {})
+      .then(() => api.saveGradeConfig(sectionId, term, configToSave));
+    configSaveQueueRef.current = request;
 
     try {
-      await api.batchUpdateScores(sectionId, term, batchUpdates);
+      await request;
+      if (configSaveVersionRef.current === version) {
+        setConfigSaveStatus("saved");
+        setConfigSaveError(null);
+      }
     } catch (err) {
-      console.error("Failed to batch save attendance sync:", err);
+      if (configSaveVersionRef.current === version) {
+        const message = err.message || "Failed to save grading configuration.";
+        setConfigSaveStatus("error");
+        setConfigSaveError(message);
+        toast.error(message);
+      }
     }
-  }, [config, students, absences, sectionId, term]);
+  }, [sectionId, term, toast]);
 
   // Save configuration changes (max items, weights, transmutation) with debouncing
-  const saveConfigTimeoutRef = useRef(null);
   const updateConfig = useCallback(
     (newConfig, immediate = false) => {
       setConfig(newConfig);
+      latestConfigRef.current = newConfig;
+      const version = configSaveVersionRef.current + 1;
+      configSaveVersionRef.current = version;
+      setConfigSaveStatus("pending");
+      setConfigSaveError(null);
 
       if (saveConfigTimeoutRef.current) {
         clearTimeout(saveConfigTimeoutRef.current);
+        saveConfigTimeoutRef.current = null;
       }
-
-      const saveToServer = async () => {
-        try {
-          await api.saveGradeConfig(sectionId, term, newConfig);
-        } catch (err) {
-          console.error("Failed to save grade config:", err);
-        }
-      };
 
       if (immediate) {
-        saveToServer();
+        saveConfigToServer(newConfig, version);
       } else {
-        saveConfigTimeoutRef.current = setTimeout(saveToServer, 400);
+        saveConfigTimeoutRef.current = setTimeout(() => {
+          saveConfigTimeoutRef.current = null;
+          saveConfigToServer(newConfig, version);
+        }, 400);
       }
     },
-    [sectionId, term]
+    [saveConfigToServer]
   );
+
+  const retryConfigSave = useCallback(() => {
+    if (saveConfigTimeoutRef.current) {
+      clearTimeout(saveConfigTimeoutRef.current);
+      saveConfigTimeoutRef.current = null;
+    }
+    saveConfigToServer(latestConfigRef.current, configSaveVersionRef.current);
+  }, [saveConfigToServer]);
+
+  useEffect(() => () => {
+    if (!saveConfigTimeoutRef.current) return;
+    clearTimeout(saveConfigTimeoutRef.current);
+    saveConfigTimeoutRef.current = null;
+    configSaveQueueRef.current = configSaveQueueRef.current
+      .catch(() => {})
+      .then(() => api.saveGradeConfig(sectionId, term, latestConfigRef.current))
+      .catch((err) => {
+        console.error("Failed to flush grading configuration on exit:", err);
+      });
+  }, [sectionId, term]);
 
   // Dedicated handlers to safely update individual column max points (allows zero and empty strings)
   const parseInputVal = (v) => (v === "" ? "" : !isNaN(Number(v)) ? Math.max(0, Number(v)) : 0);
@@ -221,26 +341,6 @@ export const useGrades = (sectionId, term = "midterm") => {
         ...config,
         me_max: val,
       };
-      updateConfig(updated, false);
-    },
-    [config, updateConfig]
-  );
-
-  const updatePlusMax = useCallback(
-    (maxVal) => {
-      if (!config) return;
-      const val = parseInputVal(maxVal);
-      const updated = { ...config, plus_max: val };
-      updateConfig(updated, false);
-    },
-    [config, updateConfig]
-  );
-
-  const updateMinusMax = useCallback(
-    (maxVal) => {
-      if (!config) return;
-      const val = parseInputVal(maxVal);
-      const updated = { ...config, minus_max: val };
       updateConfig(updated, false);
     },
     [config, updateConfig]
@@ -324,10 +424,14 @@ export const useGrades = (sectionId, term = "midterm") => {
   const batchAddStudents = useCallback(
     async (names) => {
       if (!sectionId || !Array.isArray(names) || names.length === 0) return;
-      await api.batchAddStudents(sectionId, names);
-      await fetchGradeData();
+      const result = await api.batchAddStudents(sectionId, names);
+      setStudents((prev) =>
+        [...prev, ...(result.students || [])].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        )
+      );
     },
-    [sectionId, fetchGradeData]
+    [sectionId]
   );
 
   // Reset all grades for this term
@@ -343,10 +447,9 @@ export const useGrades = (sectionId, term = "midterm") => {
     if (!config) return [];
     return students.map((student) => {
       const studentScores = grades[student.id] || {};
-      const absencesCount = absences[student.id] || 0;
-      return computeStudentGradeRow(student, studentScores, config, absencesCount);
+      return computeStudentGradeRow(student, studentScores, config);
     });
-  }, [students, grades, config, absences]);
+  }, [students, grades, config]);
 
   // Overall class statistics
   const stats = useMemo(() => {
@@ -400,8 +503,8 @@ export const useGrades = (sectionId, term = "midterm") => {
       const semScore = semestralScores[student.id] || {};
       const parsed = parseStudentNameAndMI(student.name, semScore.mi);
 
-      const mRow = mConfig ? computeStudentGradeRow(student, mGrades[student.id] || {}, mConfig, absences[student.id] || 0) : null;
-      const fRow = fConfig ? computeStudentGradeRow(student, fGrades[student.id] || {}, fConfig, absences[student.id] || 0) : null;
+      const mRow = mConfig ? computeStudentGradeRow(student, mGrades[student.id] || {}, mConfig) : null;
+      const fRow = fConfig ? computeStudentGradeRow(student, fGrades[student.id] || {}, fConfig) : null;
 
       const midtermGrade = typeof mRow?.finalGrade === "number" ? mRow.finalGrade : "";
       const finalGrade = typeof fRow?.finalGrade === "number" ? fRow.finalGrade : "";
@@ -423,26 +526,28 @@ export const useGrades = (sectionId, term = "midterm") => {
         remarks,
       };
     });
-  }, [students, term, config, grades, absences, midtermOverview, finalsOverview, semestralScores]);
+  }, [students, term, config, grades, midtermOverview, finalsOverview, semestralScores]);
 
   return {
     students,
     config,
     grades,
-    absences,
     loading,
     saving,
     error,
+    saveError,
+    configSaveStatus,
+    configSaveError,
     computedRows,
     semestralRows,
     stats,
     updateScore,
     updateQuizScore,
     updateConfig,
+    retryFailedSaves,
+    retryConfigSave,
     updatePeMax,
     updateMeMax,
-    updatePlusMax,
-    updateMinusMax,
     updateQuizItemMax,
     updateRtMax,
     updateAtMax,

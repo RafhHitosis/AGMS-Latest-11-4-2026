@@ -13,19 +13,32 @@ import {
   School,
   CheckSquare,
   Sparkles,
+  ShieldCheck,
+  TriangleAlert,
+  RefreshCw,
 } from "lucide-react";
 import clsx from "clsx";
 import { useSettings } from "../hooks/useSettings";
 import ConfigModal from "./ConfigModal";
 import ToolSelectionModal from "./ToolSelectionModal";
+import AdminPanelModal from "./AdminPanelModal";
 import bgPattern from "../assets/bg.png";
+import { useToast } from "../context/ToastContext";
 
-export default function SectionSelection({ onSelectTool, onSelectSection, onSignOut }) {
+export default function SectionSelection({
+  onSelectTool,
+  onSelectSection,
+  onSignOut,
+  currentUser,
+  onAcknowledgeWelcome,
+  onSaveAdminRecoveryQuestions,
+}) {
   const [selectedYear, setSelectedYear] = useState(null);
   const [yearSearch, setYearSearch] = useState("");
   const [sectionSearch, setSectionSearch] = useState("");
   const [selectedSectionForTool, setSelectedSectionForTool] = useState(null);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const sectionsPanelRef = useRef(null);
   const {
     appConfig,
@@ -34,6 +47,7 @@ export default function SectionSelection({ onSelectTool, onSelectSection, onSign
     updateAppLogo,
     updateSectionConfiguration,
     loading,
+    error,
     refreshConfig,
   } = useSettings();
 
@@ -98,12 +112,30 @@ export default function SectionSelection({ onSelectTool, onSelectSection, onSign
         style={{ backgroundImage: `url(${bgPattern})`, backgroundSize: 'auto 100%' }}
       ></div>
 
-      <ConfigModal
-        isOpen={isConfigOpen}
-        onClose={() => setIsConfigOpen(false)}
-        config={appConfig}
-        onSave={handleSaveConfig}
-      />
+      {!loading && !error && (
+        <ConfigModal
+          isOpen={isConfigOpen}
+          onClose={() => setIsConfigOpen(false)}
+          config={appConfig}
+          onSave={handleSaveConfig}
+        />
+      )}
+
+      {!loading && !error && currentUser?.id && !currentUser.welcome_acknowledged && yearLevels.length === 0 && (
+        <TeacherWelcomeModal
+          appTitle={appConfig.title}
+          onAcknowledge={onAcknowledgeWelcome}
+        />
+      )}
+
+      {currentUser?.role === "admin" && !loading && !error && (
+        <AdminPanelModal
+          isOpen={isAdminPanelOpen}
+          onClose={() => setIsAdminPanelOpen(false)}
+          adminRecoveryConfigured={currentUser.admin_recovery_configured}
+          onSaveAdminRecoveryQuestions={onSaveAdminRecoveryQuestions}
+        />
+      )}
 
       <ToolSelectionModal
         isOpen={!!selectedSectionForTool}
@@ -120,6 +152,17 @@ export default function SectionSelection({ onSelectTool, onSelectSection, onSign
 
       {/* Page actions */}
       <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        {currentUser?.role === "admin" && !loading && !error && (
+          <button
+            type="button"
+            onClick={() => setIsAdminPanelOpen(true)}
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-outline-variant/30 bg-surface text-on-surface-variant shadow-xs transition-colors hover:bg-surface-container-high hover:text-primary"
+            title="Teacher access"
+            aria-label="Manage teacher access"
+          >
+            <ShieldCheck className="h-5 w-5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onSignOut}
@@ -129,14 +172,14 @@ export default function SectionSelection({ onSelectTool, onSelectSection, onSign
         >
           <LogOut className="h-4 w-4" />
         </button>
-        <button
+        {!loading && !error && <button
           onClick={() => setIsConfigOpen(true)}
           className="flex h-10 w-10 items-center justify-center rounded-full bg-surface border border-outline-variant/30 shadow-xs hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
           title="App Configuration & Settings"
           aria-label="App Configuration & Settings"
         >
           <Settings className="w-5 h-5" />
-        </button>
+        </button>}
       </div>
 
       <div className="max-w-4xl w-full z-10 relative">
@@ -165,16 +208,32 @@ export default function SectionSelection({ onSelectTool, onSelectSection, onSign
             )}
           </div>
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-on-surface">
-            {appConfig.title || "Attendance System"}
+            {appConfig.title || "AGMS"}
           </h1>
           <p className="text-on-surface-variant text-base md:text-lg">
-            {appConfig.subtitle || "Choose a year level and section to manage attendance"}
+            {appConfig.subtitle || "Choose a year level and section to manage attendance and grades"}
           </p>
         </div>
 
         {loading ? (
-          <div className="flex justify-center p-12">
+          <div className="flex justify-center p-12" role="status" aria-label="Loading application configuration">
             <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : error ? (
+          <div className="mx-auto max-w-xl rounded-2xl border border-error/30 bg-error-container p-6 text-center text-on-error-container shadow-elevation-1" role="alert">
+            <TriangleAlert className="mx-auto mb-3 h-8 w-8" aria-hidden="true" />
+            <h2 className="text-base font-bold">Could not load your sections</h2>
+            <p className="mt-2 text-sm">
+              {error.message || "The application configuration is unavailable. Your data has not been changed."}
+            </p>
+            <button
+              type="button"
+              onClick={refreshConfig}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary transition-opacity hover:opacity-90"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Retry
+            </button>
           </div>
         ) : (
           <div className="grid gap-5 md:grid-cols-2 md:gap-6 items-start">
@@ -210,13 +269,15 @@ export default function SectionSelection({ onSelectTool, onSelectSection, onSign
               <div className="max-h-[min(55vh,28rem)] space-y-2 overflow-y-auto p-3">
                 {yearLevels.length === 0 && (
                   <div className="p-6 text-center space-y-3">
-                    <p className="text-sm text-slate-400">No year levels or sections configured.</p>
+                    <p className="text-sm text-on-surface-variant">
+                      No year levels have been added yet.
+                    </p>
                     <button
                       onClick={() => setIsConfigOpen(true)}
                       className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-primary text-on-primary hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
                     >
                       <Settings className="w-4 h-4" />
-                      Configure Sections
+                      Set Up Sections
                     </button>
                   </div>
                 )}
@@ -331,8 +392,18 @@ export default function SectionSelection({ onSelectTool, onSelectSection, onSign
                   ))}
                 {selectedYear &&
                   availableSections.length === 0 && (
-                    <div className="col-span-2 text-center py-8 text-outline/60 italic text-sm">
-                      No sections available
+                    <div className="col-span-2 flex flex-col items-center gap-3 py-8 text-center">
+                      <p className="text-sm text-on-surface-variant">
+                        `No sections have been added to ${selectedYear} yet.`
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setIsConfigOpen(true)}
+                        className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-on-primary shadow-sm transition-opacity hover:opacity-90"
+                      >
+                        <Settings className="h-4 w-4" />
+                        Add Sections
+                      </button>
                     </div>
                   )}
                 {selectedYear && availableSections.length > 0 && matchingSections.length === 0 && (
@@ -345,6 +416,58 @@ export default function SectionSelection({ onSelectTool, onSelectSection, onSign
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function TeacherWelcomeModal({ appTitle, onAcknowledge }) {
+  const toast = useToast();
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleAcknowledge = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      await onAcknowledge();
+    } catch (error) {
+      console.error("Failed to save welcome acknowledgment:", error);
+      toast.error("We couldn't save that you've completed the introduction. Please try again.");
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="welcome-modal-title"
+        aria-describedby="welcome-modal-message welcome-modal-introduction"
+        className="w-full max-w-lg rounded-3xl border border-outline-variant/30 bg-surface p-6 text-on-surface shadow-elevation-3 sm:p-8"
+      >
+        <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-container text-primary">
+          <Sparkles className="h-6 w-6" aria-hidden="true" />
+        </div>
+        <h2 id="welcome-modal-title" className="text-xl font-bold tracking-tight sm:text-2xl">
+          Welcome to {appTitle || "AGMS"}
+        </h2>
+        <p id="welcome-modal-message" className="mt-3 text-sm font-semibold text-on-surface">
+          Welcome! Start by adding your first year level and sections.
+        </p>
+        <p id="welcome-modal-introduction" className="mt-2 text-sm leading-6 text-on-surface-variant">
+          AGMS brings attendance tracking, grading, and student progress together in one place.
+          Set up your classes, then choose a section to get started.
+        </p>
+        <button
+          type="button"
+          autoFocus
+          onClick={handleAcknowledge}
+          disabled={isSaving}
+          className="mt-7 inline-flex w-full items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-on-primary transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-70"
+        >
+          {isSaving ? "Saving..." : "Okay, get started"}
+        </button>
+      </section>
     </div>
   );
 }

@@ -1,21 +1,17 @@
 import React from "react";
-import { Download, RefreshCw, Edit3 } from "lucide-react";
 import clsx from "clsx";
-import ReadModeToggle from "./ReadModeToggle";
 import useReadModeCellSelection from "../hooks/useReadModeCellSelection";
 
 export default function GradeMasterTable({
   computedRows = [],
+  totalStudents = 0,
   config = {},
   grades = {},
   onUpdateScore,
   onUpdateRtMax,
   onUpdateAtMax,
-  onSyncAttendance,
   activeFilter = "ALL",
-  onClearFilter,
   readMode = false,
-  onToggleReadMode,
 }) {
   const peMax = Number(config?.pe_max) || 0;
   const meMax = Number(config?.me_max) || 50;
@@ -41,47 +37,6 @@ export default function GradeMasterTable({
       onKeyDownCapture={handleCellKeyDown}
       className={clsx("grade-sheet-table flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900", readMode && "grade-read-mode")}
     >
-      {/* Top ribbon */}
-      <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-800 dark:text-slate-100">
-            Master Grade Sheet
-          </span>
-          {activeFilter && activeFilter !== "ALL" && (
-            <div className="flex items-center gap-1.5 bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 px-2 py-0.5 rounded-full text-[11px] font-bold border border-amber-300 dark:border-amber-700">
-              <span>Filtered: {activeFilter.replace("_", " ")}</span>
-              {onClearFilter && (
-                <button
-                  onClick={onClearFilter}
-                  className="hover:text-red-700 dark:hover:text-red-400 cursor-pointer ml-1 font-black"
-                  title="Clear filter"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <ReadModeToggle enabled={readMode} onToggle={onToggleReadMode} />
-          {onSyncAttendance && (
-            <button
-              onClick={onSyncAttendance}
-              disabled={readMode}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-300 dark:border-slate-700 font-semibold text-xs cursor-pointer shadow-2xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title={readMode ? "Turn off read mode to sync attendance" : "Copy present days from daily attendance logs into AT for this section"}
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-              Sync Attendance
-            </button>
-          )}
-          <span className="font-semibold text-slate-500 dark:text-slate-400">
-            Total Students: {computedRows.length}
-          </span>
-        </div>
-      </div>
-
       <div className="flex-1 overflow-auto">
         <table className="w-full border-collapse text-xs select-none">
           <thead className="sticky top-0 z-20 shadow-sm bg-white dark:bg-slate-900">
@@ -202,7 +157,12 @@ export default function GradeMasterTable({
 
             {/* Weights and Max Points Spec Row matching Image 1 */}
             <tr className="border-b-2 border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 text-center text-[10px] font-bold text-slate-700 dark:text-slate-300">
-              <td className="border-r border-slate-300 dark:border-slate-700 py-1 bg-slate-50 dark:bg-slate-800"></td>
+              <td
+                className="border-r border-slate-300 dark:border-slate-700 py-1 bg-slate-50 dark:bg-slate-800"
+                title={`Total students: ${totalStudents}`}
+              >
+                {totalStudents}
+              </td>
               <td className="border-r border-slate-300 dark:border-slate-700 py-1 px-4 text-left uppercase text-slate-400"></td>
 
               {/* Major Exam MET Max */}

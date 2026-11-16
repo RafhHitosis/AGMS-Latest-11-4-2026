@@ -1,0 +1,31 @@
+export const DEFAULT_GRADE_CONFIG = {
+  pe_max: 0,
+  me_max: 50,
+  plus_max: 0,
+  minus_max: 0,
+  quiz_items: [
+    { id: "HQ1", name: "HQ1", max: 100 },
+    { id: "HQ2", name: "HQ2", max: 25 },
+    { id: "LA1", name: "LA1", max: 50 },
+    { id: "LA2", name: "LA2", max: 50 },
+  ],
+  rt_max: 50,
+  at_max: 36,
+  transmutation: {
+    me_high: 100,
+    me_low: 50,
+    quiz_high: 100,
+    quiz_low: 50,
+    rec_high: 95,
+    rec_low: 70,
+    att_high: 95,
+    att_low: 70,
+  },
+  weights: {
+    me: 0.4,
+    quiz: 0.25,
+    rec: 0.25,
+    dep: 0.05,
+    att: 0.05,
+  },
+};

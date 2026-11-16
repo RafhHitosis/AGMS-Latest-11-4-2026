@@ -1,53 +1,33 @@
 import React, { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import clsx from "clsx";
 import ConfirmModal from "./ConfirmModal";
-import ReadModeToggle from "./ReadModeToggle";
 import useReadModeCellSelection from "../hooks/useReadModeCellSelection";
 
 export default function GradeInputGround({
-  students = [],
   computedRows = [],
+  totalStudents = 0,
   config = {},
   grades = {},
   onUpdateScore,
   onUpdateQuizScore,
   onUpdatePeMax,
   onUpdateMeMax,
-  onUpdatePlusMax,
-  onUpdateMinusMax,
   onUpdateQuizItemMax,
-  onAddQuizItem,
   onRemoveQuizItem,
   activeFilter = "ALL",
-  onClearFilter,
   readMode = false,
-  onToggleReadMode,
 }) {
-  const [newQuizName, setNewQuizName] = useState("");
-  const [newQuizMax, setNewQuizMax] = useState("50");
-  const [showAddModal, setShowAddModal] = useState(false);
   const [quizToDelete, setQuizToDelete] = useState(null);
 
   const peMax = Number(config?.pe_max) || 0;
   const meMax = Number(config?.me_max) || 50;
-  const plusMax = Number(config?.plus_max) || 0;
-  const minusMax = Number(config?.minus_max) || 0;
   const metMax = Math.max(1, peMax + meMax || 50);
 
   const quizItems = config?.quiz_items || [];
   const sumQuiz = quizItems.reduce((acc, it) => acc + (Number(it.max) || 0), 0);
   const totalQuizMax = sumQuiz > 0 ? sumQuiz : 225;
   const { containerRef, handleCellClick, handleCellKeyDown } = useReadModeCellSelection(readMode);
-
-  const handleAddQuiz = (e) => {
-    e.preventDefault();
-    if (!newQuizName.trim()) return;
-    onAddQuizItem(newQuizName.trim(), Number(newQuizMax) || 50);
-    setNewQuizName("");
-    setNewQuizMax("50");
-    setShowAddModal(false);
-  };
 
   return (
     <div
@@ -56,99 +36,6 @@ export default function GradeInputGround({
       onKeyDownCapture={handleCellKeyDown}
       className={clsx("grade-sheet-table flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900", readMode && "grade-read-mode")}
     >
-      {/* Top action bar */}
-      <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex items-center justify-between text-xs">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-800 dark:text-slate-100">
-            Grade Input Ground
-          </span>
-          {activeFilter && activeFilter !== "ALL" && (
-            <div className="flex items-center gap-1.5 bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 px-2 py-0.5 rounded-full text-[11px] font-bold border border-amber-300 dark:border-amber-700">
-              <span>Filtered: {activeFilter.replace("_", " ")}</span>
-              {onClearFilter && (
-                <button
-                  onClick={onClearFilter}
-                  className="hover:text-red-700 dark:hover:text-red-400 cursor-pointer ml-1 font-black"
-                  title="Clear filter"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <ReadModeToggle enabled={readMode} onToggle={onToggleReadMode} />
-          <button
-            onClick={() => setShowAddModal(true)}
-            disabled={readMode}
-            title={readMode ? "Turn off read mode to add a column" : "Add a quiz or lab column"}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add Quiz/Lab Column
-          </button>
-        </div>
-      </div>
-
-      {/* Add Quiz Modal */}
-      {showAddModal && !readMode && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-sm p-5 border border-slate-200 dark:border-slate-800">
-            <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base mb-3">Add Quiz or Activity Column</h3>
-            <form onSubmit={handleAddQuiz} className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1 block">Column Title</label>
-                <input
-                  type="text"
-                  readOnly={readMode}
-                  placeholder="e.g. HQ3 or LA3"
-                  className="w-full border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
-                  value={newQuizName}
-                  onChange={(e) => setNewQuizName(e.target.value)}
-                  autoFocus
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1 block">Maximum Points</label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  readOnly={readMode}
-                  placeholder="50"
-                  className="w-full border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
-                  value={newQuizMax}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "" || /^[0-9]*\.?[0-9]*$/.test(v)) {
-                      setNewQuizMax(v);
-                    }
-                  }}
-                  required
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-3 py-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 cursor-pointer"
-                >
-                  Add Column
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       <ConfirmModal
         isOpen={Boolean(quizToDelete) && !readMode}
         title="Delete quiz/activity column?"
@@ -229,7 +116,12 @@ export default function GradeInputGround({
 
             {/* EDITABLE Max / Total Points Spec Row */}
             <tr className="border-b-2 border-slate-400 dark:border-slate-600 bg-slate-50 dark:bg-slate-850 text-center text-[10px] font-bold text-slate-600 dark:text-slate-300">
-              <td className="border-r border-slate-300 dark:border-slate-700 py-1 bg-slate-100 dark:bg-slate-800"></td>
+              <td
+                className="border-r border-slate-300 dark:border-slate-700 py-1 bg-slate-100 dark:bg-slate-800"
+                title={`Total students: ${totalStudents}`}
+              >
+                {totalStudents}
+              </td>
               <td className="border-r border-slate-300 dark:border-slate-700 py-1 px-4 text-left uppercase text-slate-700 dark:text-slate-200 font-sans font-extrabold">
                 MAX / TOTAL POINTS
               </td>

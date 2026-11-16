@@ -1,5 +1,6 @@
 import React from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, Lock } from "lucide-react";
+import clsx from "clsx";
 
 export default function ReadModeToggle({ enabled, onToggle }) {
   return (
@@ -7,15 +8,25 @@ export default function ReadModeToggle({ enabled, onToggle }) {
       type="button"
       onClick={onToggle}
       aria-pressed={enabled}
-      className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-semibold text-xs transition-colors ${
+      className={clsx(
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-2.5 py-1 text-xs font-semibold shadow-xs transition-all cursor-pointer select-none",
         enabled
-          ? "bg-indigo-100 text-indigo-800 border-indigo-300 hover:bg-indigo-200 dark:bg-indigo-950/70 dark:text-indigo-200 dark:border-indigo-800 dark:hover:bg-indigo-900/70"
-          : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-700"
-      }`}
-      title={enabled ? "Turn off read mode to edit this table" : "Turn on read mode to prevent edits"}
+          ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20"
+          : "border-outline-variant/60 bg-surface text-on-surface hover:bg-surface-container-high dark:bg-surface-container"
+      )}
+      title={enabled ? "Read-only mode active: click to unlock editing" : "Edit mode active: click to lock table against accidental edits"}
     >
-      {enabled ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-      Read Mode {enabled ? "On" : "Off"}
+      {enabled ? (
+        <>
+          <Lock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+          <span>Read-Only</span>
+        </>
+      ) : (
+        <>
+          <Eye className="h-3.5 w-3.5 text-on-surface-variant" />
+          <span>Read Mode Off</span>
+        </>
+      )}
     </button>
   );
 }

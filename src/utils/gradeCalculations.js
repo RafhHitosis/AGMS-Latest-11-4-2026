@@ -5,6 +5,12 @@
  */
 export const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
 
+const configuredNumber = (value, fallback) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
 const roundToExcel = (value, decimalPlaces = 0) => {
   const factor = 10 ** decimalPlaces;
   const scaledValue = Math.abs(value) * factor;
@@ -16,7 +22,7 @@ const roundToExcel = (value, decimalPlaces = 0) => {
  * Calculate Major Exam Total (MET) from raw scores
  * Formula: =IF(A5 <> "", SUM(B5:D5) - E5, "")
  */
-export const calculateMET = (scores, meMax = 50) => {
+export const calculateMET = (scores) => {
   if (!scores) return "";
   const pe = scores.pe !== undefined && scores.pe !== null && scores.pe !== "" ? Number(scores.pe) : null;
   const me = scores.me !== undefined && scores.me !== null && scores.me !== "" ? Number(scores.me) : null;
@@ -146,7 +152,7 @@ export const calculateAR = (at, totalDays = 36, attHigh = 95, attLow = 70, remar
 /**
  * Calculate all student grade row components strictly matching the Excel formulas and transmutation constraints.
  */
-export const computeStudentGradeRow = (student, scores = {}, config = {}, absencesCount = 0) => {
+export const computeStudentGradeRow = (student, scores = {}, config = {}) => {
   const trans = config.transmutation || {};
   const weights = config.weights || {};
   const quizItems = config.quiz_items || [];
@@ -159,25 +165,25 @@ export const computeStudentGradeRow = (student, scores = {}, config = {}, absenc
   const rtMax = Math.max(1, Number(config.rt_max) || 50);
   const atMax = Math.max(1, Number(config.at_max) || 36);
 
-  const meHigh = Number(trans.me_high) || 100;
-  const meLow = Number(trans.me_low) || 50;
-  const quizHigh = Number(trans.quiz_high) || 100;
-  const quizLow = Number(trans.quiz_low) || 50;
-  const recHigh = Number(trans.rec_high) || 95;
-  const recLow = Number(trans.rec_low) || 70;
-  const attHigh = Number(trans.att_high) || 95;
-  const attLow = Number(trans.att_low) || 70;
+  const meHigh = configuredNumber(trans.me_high ?? trans.mer_high, 100);
+  const meLow = configuredNumber(trans.me_low ?? trans.mer_low, 50);
+  const quizHigh = configuredNumber(trans.quiz_high ?? trans.qr_high, 100);
+  const quizLow = configuredNumber(trans.quiz_low ?? trans.qr_low, 50);
+  const recHigh = configuredNumber(trans.rec_high, 95);
+  const recLow = configuredNumber(trans.rec_low, 70);
+  const attHigh = configuredNumber(trans.att_high, 95);
+  const attLow = configuredNumber(trans.att_low, 70);
 
-  const meWeight = Number(weights.me) || 0.40;
-  const quizWeight = Number(weights.quiz) || 0.25;
-  const recWeight = Number(weights.rec) || 0.25;
-  const depWeight = Number(weights.dep) || 0.05;
-  const attWeight = Number(weights.att) || 0.05;
+  const meWeight = configuredNumber(weights.me, 0.40);
+  const quizWeight = configuredNumber(weights.quiz, 0.25);
+  const recWeight = configuredNumber(weights.rec, 0.25);
+  const depWeight = configuredNumber(weights.dep, 0.05);
+  const attWeight = configuredNumber(weights.att, 0.05);
 
   const remarks = (scores.remarks || "").trim().toUpperCase();
 
   // Raw Scores
-  const met = calculateMET(scores, metMax);
+  const met = calculateMET(scores);
   const qt = calculateQT(scores, quizItems);
   const rt = scores.rt !== undefined && scores.rt !== null && scores.rt !== "" ? Number(scores.rt) : "";
 
